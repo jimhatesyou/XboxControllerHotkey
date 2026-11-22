@@ -60,7 +60,7 @@ jobs:
         working-directory: v2
         shell: cmd
         run: |
-          py -3 -m PyInstaller --noconfirm --clean --windowed --onefile --name XboxControllerHotkey --icon "assets\app-icon.ico" --collect-all pygame --collect-all winsdk --add-data "assets;assets" app.py
+          python -m PyInstaller --noconfirm --clean --windowed --onefile --name XboxControllerHotkey --icon "assets\app-icon.ico" --collect-all pygame --collect-all winsdk --add-data "assets;assets" app.py
 
       - name: Create SHA256 checksum
         shell: pwsh
