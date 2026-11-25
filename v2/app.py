@@ -1277,7 +1277,7 @@ class UpdatePromptDialog(QDialog):
         layout.addWidget(title)
 
         versions = QLabel(
-            f"XboxControllerHotkey v{self_version()} is installed.\n"
+            f"XboxControllerHotkey v{APP_VERSION} is installed.\n"
             f"Version v{latest_version} is available."
         )
         versions.setStyleSheet("color:#C5CCD6;font-size:12px;padding:7px 0;")
