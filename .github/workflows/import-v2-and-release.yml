@@ -17,13 +17,13 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: main
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           architecture: "x64"
@@ -49,7 +49,7 @@ jobs:
           "$hash  XboxControllerHotkey.exe" | Out-File -Encoding ascii "dist/XboxControllerHotkey.exe.sha256"
 
       - name: Publish GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ inputs.release_tag }}
           target_commitish: main
