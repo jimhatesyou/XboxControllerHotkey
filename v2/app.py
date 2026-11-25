@@ -2607,11 +2607,8 @@ class ConnectionToast(QWidget):
         self._position_near_taskbar()
         self.show()
         self.raise_()
-        if initial:
-            # Keep the startup waiting state visible until a controller connects.
-            self.hide_timer.stop()
-        else:
-            self.hide_timer.start(4500)
+        # All connection notices, including the startup status, are temporary.
+        self.hide_timer.start(5000)
 
     def _position_near_taskbar(self):
         screen = self.app.primaryScreen()
@@ -2760,25 +2757,20 @@ class TrayApplication:
         self.popover.refresh()
 
         if connected and not self.last_connected:
-            # Clear a persistent startup/disconnected notice before showing the
-            # connected notification after the tray icon has refreshed.
+            # Replace any currently visible status toast immediately.
             self.connection_toast.hide()
-            # Windows may display the notification before the Explorer tray
-            # finishes repainting the changed icon. Delay the toast briefly.
-            connected_name = info.name
-            QTimer.singleShot(
-                1000,
-                lambda name=connected_name: self.show_connected_notification(name)
-            )
+            self.show_connected_notification(info.name)
             self.battery_timer.stop()
             QTimer.singleShot(1000, self.refresh_battery)
             self.battery_timer.start()
         elif not connected and self.last_connected:
+            # A disconnect replaces the connected toast immediately.
+            self.connection_toast.hide()
             self.battery_timer.stop()
             self.connection_toast.show_status(False)
         elif not connected and not self.has_checked_connection:
-            # Give the user an explicit startup state instead of leaving them
-            # unsure whether the app is running and waiting for a controller.
+            # Show the initial disconnected state briefly on launch.
+            self.connection_toast.hide()
             self.connection_toast.show_status(False, initial=True)
         self.last_connected = connected
         self.has_checked_connection = True
