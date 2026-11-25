@@ -51,7 +51,7 @@ except Exception:
 
 
 APP_NAME = "XboxControllerHotkey"
-APP_VERSION = "2.0.16"
+APP_VERSION = "2.0.17"
 ACCESSORIES_AUMID = r"Microsoft.XboxDevices_8wekyb3d8bbwe!App"
 ACCESSORIES_STORE_URI = "ms-windows-store://pdp/?productid=9NBLGGH30XJ3"
 CAPTURE_SETTINGS_URI = "ms-settings:gaming-gamedvr"
@@ -1293,8 +1293,13 @@ class UpdatePromptDialog(QDialog):
         later.clicked.connect(self.reject)
         layout.addWidget(later)
 
+        layout.addStretch(1)
+        footer = QHBoxLayout()
+        footer.setContentsMargins(0, 8, 0, 0)
         self.do_not_ask = QCheckBox("Do not ask me again")
-        layout.addWidget(self.do_not_ask)
+        footer.addWidget(self.do_not_ask)
+        footer.addStretch(1)
+        layout.addLayout(footer)
 
     def _update(self):
         self.choice = "update"
@@ -1994,6 +1999,8 @@ class StatusPopover(QFrame):
         self.latest_sha_url=""
         self.update_checked=False
         self.update_download_worker=None
+        self.pending_update_prompt=False
+        self.update_prompt_deferred=False
 
     def _show_page(self,page):
         self.pages.setCurrentWidget(page)
@@ -2011,6 +2018,7 @@ class StatusPopover(QFrame):
             self.monitor.last_hotkey=False
         self._show_page(self.home_page)
         self.refresh()
+        self._maybe_show_update_prompt()
 
     def show_about(self):
         self._show_page(self.about_page)
@@ -2205,18 +2213,35 @@ class StatusPopover(QFrame):
             self.release_button.setVisible(True)
             if hasattr(self, "install_update_button"):
                 self.install_update_button.setVisible(True)
-            if not bool(self.settings.value("disableUpdatePrompts", False, type=bool)):
-                prompt = UpdatePromptDialog(self.latest_release_tag, self)
-                prompt_result = prompt.exec()
-                if prompt.do_not_ask.isChecked():
-                    self.settings.setValue("disableUpdatePrompts", True)
-                if prompt_result == QDialog.DialogCode.Accepted and prompt.choice == "update":
-                    self.begin_auto_update()
+            self.pending_update_prompt = True
+            self._maybe_show_update_prompt()
         elif latest==current:
             if hasattr(self, "update_status"): self.update_status.setText(f"You're up to date — v{APP_VERSION}.")
         else:
             if hasattr(self, "update_status"): self.update_status.setText(f"You're running v{APP_VERSION}, newer than the latest published release v{self.latest_release_tag}. This is a development build.")
         self.update_worker=None
+
+    def _maybe_show_update_prompt(self):
+        if not self.pending_update_prompt or self.update_prompt_deferred:
+            return
+        if bool(self.settings.value("disableUpdatePrompts", False, type=bool)):
+            self.pending_update_prompt = False
+            return
+        # Keep the startup update check silent while the app is tray-only.
+        # Present the prompt only while the main popover view is open.
+        if not self.isVisible() or self.pages.currentWidget() is not self.home_page:
+            return
+
+        self.pending_update_prompt = False
+        prompt = UpdatePromptDialog(self.latest_release_tag, self)
+        prompt_result = prompt.exec()
+        if prompt.do_not_ask.isChecked():
+            self.settings.setValue("disableUpdatePrompts", True)
+        if prompt_result == QDialog.DialogCode.Accepted and prompt.choice == "update":
+            self.begin_auto_update()
+        else:
+            # Remind me later means the next popover opening, not immediately.
+            self.update_prompt_deferred = True
 
     def begin_auto_update(self):
         if not getattr(sys,"frozen",False) or os.name!="nt":
@@ -2366,6 +2391,8 @@ class StatusPopover(QFrame):
         self.raise_()
         self.activateWindow()
         self.setFocus(Qt.FocusReason.PopupFocusReason)
+        self.update_prompt_deferred = False
+        self._maybe_show_update_prompt()
 
 
 class XInputHotkeyWorker(threading.Thread):
