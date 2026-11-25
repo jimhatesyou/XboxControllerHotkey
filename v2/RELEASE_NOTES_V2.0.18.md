@@ -3,6 +3,7 @@
 ## Notifications
 - Controller connection and disconnection notifications now dismiss after five seconds, including the initial no-controller startup notice.
 - Notifications fade out when their timer expires.
+- Positioned notifications relative to the system-tray icon so they stay clear of the notification area, including when the Windows taskbar auto-hides.
 - Added an X close control so notifications can be dismissed immediately.
 
 ## About Screen
