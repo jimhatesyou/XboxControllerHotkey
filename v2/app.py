@@ -1728,6 +1728,11 @@ class StatusPopover(QFrame):
         self.check_button.clicked.connect(self.check_updates)
         about_lay.addWidget(self.check_button)
 
+        self.install_update_button=QPushButton("Update now")
+        self.install_update_button.setVisible(False)
+        self.install_update_button.clicked.connect(self.begin_auto_update)
+        about_lay.addWidget(self.install_update_button)
+
         faq_button=QPushButton("FAQs")
         faq_button.setObjectName("secondary")
         faq_button.clicked.connect(self.show_faq)
@@ -2162,6 +2167,7 @@ class StatusPopover(QFrame):
         request_id=self.update_request_id
         if hasattr(self, "check_button"): self.check_button.setEnabled(False)
         if hasattr(self, "release_button"): self.release_button.setVisible(False)
+        if hasattr(self, "install_update_button"): self.install_update_button.setVisible(False)
         if not automatic and hasattr(self, "update_status"): self.update_status.setText("Checking GitHub releases…")
         self.update_checked=False; self.update_timed_out=False
         worker=UpdateCheckWorker(self); self.update_worker=worker; self.update_workers.append(worker)
@@ -2197,9 +2203,9 @@ class StatusPopover(QFrame):
         if latest>current:
             self.update_status.setText(f"Update available: v{self.latest_release_tag} (installed: v{APP_VERSION}).")
             self.release_button.setVisible(True)
-            # Manual checks always offer the update prompt. The opt-out only
-            # suppresses unsolicited prompts during startup checks.
-            if not automatic or not bool(self.settings.value("disableUpdatePrompts", False, type=bool)):
+            if hasattr(self, "install_update_button"):
+                self.install_update_button.setVisible(True)
+            if not bool(self.settings.value("disableUpdatePrompts", False, type=bool)):
                 prompt = UpdatePromptDialog(self.latest_release_tag, self)
                 prompt_result = prompt.exec()
                 if prompt.do_not_ask.isChecked():
