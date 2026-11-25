@@ -51,7 +51,7 @@ except Exception:
 
 
 APP_NAME = "XboxControllerHotkey"
-APP_VERSION = "2.0.14"
+APP_VERSION = "2.0.12"
 ACCESSORIES_AUMID = r"Microsoft.XboxDevices_8wekyb3d8bbwe!App"
 ACCESSORIES_STORE_URI = "ms-windows-store://pdp/?productid=9NBLGGH30XJ3"
 CAPTURE_SETTINGS_URI = "ms-settings:gaming-gamedvr"
@@ -892,47 +892,6 @@ def open_capture_settings():
         return False
 
 
-def open_captures_folder(parent=None):
-    """Open the Windows Known Folder for Captures, including a user-customized location."""
-    if os.name != "nt":
-        QMessageBox.warning(parent, APP_NAME, "The Windows Captures folder is only available on Windows.")
-        return False
-
-    class GUID(ctypes.Structure):
-        _fields_ = [
-            ("Data1", wintypes.DWORD),
-            ("Data2", wintypes.WORD),
-            ("Data3", wintypes.WORD),
-            ("Data4", ctypes.c_ubyte * 8),
-        ]
-
-    captures_id = GUID(
-        0xEDC0FE71, 0x98D8, 0x4F4A,
-        (ctypes.c_ubyte * 8)(0xB9, 0x20, 0xC8, 0xE3, 0xB3, 0xE5, 0xC9, 0xA1),
-    )
-    path_ptr = wintypes.LPWSTR()
-    try:
-        result = ctypes.windll.shell32.SHGetKnownFolderPath(
-            ctypes.byref(captures_id), 0, None, ctypes.byref(path_ptr)
-        )
-        if result != 0 or not path_ptr.value:
-            raise OSError(f"SHGetKnownFolderPath failed: 0x{result & 0xFFFFFFFF:08X}")
-        folder = path_ptr.value
-        return QDesktopServices.openUrl(QUrl.fromLocalFile(folder))
-    except Exception as exc:
-        QMessageBox.warning(
-            parent, APP_NAME,
-            "Windows could not locate your configured Captures folder.\n\n" + str(exc),
-        )
-        return False
-    finally:
-        if path_ptr:
-            try:
-                ctypes.windll.ole32.CoTaskMemFree(path_ptr)
-            except Exception:
-                pass
-
-
 class FirstRunSetup(QDialog):
     """First-run connection preference and controller enrollment."""
     METHODS = [
@@ -1027,11 +986,6 @@ class FirstRunSetup(QDialog):
         self.continue_button.clicked.connect(self.finish_setup)
         layout.addWidget(self.continue_button)
 
-        skip_button = QPushButton("Skip and start the app")
-        skip_button.setObjectName("footer")
-        skip_button.clicked.connect(self.skip_setup)
-        layout.addWidget(skip_button, alignment=Qt.AlignmentFlag.AlignHCenter)
-
         self.scan_timer = QTimer(self)
         self.scan_timer.setInterval(1000)
         self.scan_timer.timeout.connect(self.scan)
@@ -1066,12 +1020,6 @@ class FirstRunSetup(QDialog):
             self.detected_info = None
             self.continue_button.setText("Waiting for controller…")
             self.continue_button.setEnabled(False)
-
-    def skip_setup(self):
-        # Remember the dismissal without marking controller setup as complete.
-        # The preference can still be configured later from the popover.
-        self.settings.setValue("setupSkipped", True)
-        self.accept()
 
     def finish_setup(self):
         if not self.detected_info:
@@ -1542,15 +1490,6 @@ class StatusPopover(QFrame):
                 min-height: 26px; max-height: 26px;
             }
             QPushButton#back:hover { color: #8AD7A8; background: transparent; }
-            QPushButton#connectionMethod {
-                text-align: left; background: rgba(38,45,56,225); color: #E8EDF4;
-                border: 1px solid rgba(130,140,155,65); border-radius: 9px;
-                padding: 9px 12px; min-height: 48px; max-height: 48px;
-                font-size: 12px; font-weight: 650;
-            }
-            QPushButton#connectionMethod:checked {
-                background: rgba(32,56,43,235); border: 1px solid #38B56A;
-            }
         """)
 
         outer=QVBoxLayout(self)
@@ -1690,12 +1629,6 @@ class StatusPopover(QFrame):
         secondary_row.addWidget(about_button)
         secondary_row.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         root.addLayout(secondary_row)
-
-        clips_button = QPushButton("View my clips")
-        clips_button.setObjectName("secondary")
-        clips_button.clicked.connect(lambda: open_captures_folder(self))
-        clips_button.setFixedHeight(38)
-        root.addWidget(clips_button)
 
         root.addSpacing(0)
         footer=QHBoxLayout()
@@ -1953,65 +1886,8 @@ class StatusPopover(QFrame):
         shortcut_actions.addWidget(reset_shortcut,1)
         shortcut_actions.addWidget(save_shortcut,1)
         shortcut_lay.addLayout(shortcut_actions)
-
-        change_connection = QPushButton("Preferred connection method")
-        change_connection.setObjectName("secondary")
-        change_connection.clicked.connect(self.show_connection_page)
-        shortcut_lay.addWidget(change_connection)
-
         shortcut_lay.addStretch(1)
         self.pages.addWidget(self.shortcut_page)
-
-        # ---------------- PREFERRED CONNECTION (IN-POPOVER PAGE) ----------------
-        self.connection_page = QWidget()
-        connection_lay = QVBoxLayout(self.connection_page)
-        connection_lay.setContentsMargins(0,0,0,22)
-        connection_lay.setSpacing(10)
-
-        connection_header = QHBoxLayout()
-        connection_back = QPushButton("Back")
-        connection_back.setObjectName("back")
-        connection_back.setIcon(QIcon(resource_path(os.path.join("assets","arrow-back-white.png"))))
-        connection_back.setIconSize(QSize(16,16))
-        connection_back.setFixedHeight(26)
-        connection_back.clicked.connect(self.show_shortcut_page)
-        connection_header.addWidget(connection_back)
-        connection_header.addStretch()
-        connection_lay.addLayout(connection_header)
-
-        connection_title = QLabel("Preferred connection")
-        connection_title.setStyleSheet("font-size:17px;font-weight:700;")
-        connection_lay.addWidget(connection_title)
-        connection_hint = QLabel("Choose how you normally connect your controller.")
-        connection_hint.setObjectName("subtitle")
-        connection_hint.setWordWrap(True)
-        connection_lay.addWidget(connection_hint)
-
-        self.connection_method_selection = str(self.settings.value("preferredConnection", "auto") or "auto")
-        self.connection_method_buttons = []
-        connection_methods = [
-            ("Automatic detection", "Let the app detect the controller", "auto"),
-            ("Xbox Wireless Adapter", "Microsoft proprietary wireless adapter", "xbox_adapter"),
-            ("Bluetooth", "Built-in or USB Bluetooth", "bluetooth"),
-            ("USB cable", "Direct wired connection", "usb"),
-        ]
-        for method_title, method_subtitle, method_key in connection_methods:
-            method_button = QPushButton(f"{method_title}\n{method_subtitle}")
-            method_button.setObjectName("connectionMethod")
-            method_button.setCheckable(True)
-            method_button.setAutoExclusive(True)
-            method_button.setMinimumHeight(48)
-            method_button.clicked.connect(
-                lambda checked=False, method=method_key: self.select_connection_method(method)
-            )
-            connection_lay.addWidget(method_button)
-            self.connection_method_buttons.append((method_key, method_button))
-
-        save_connection = QPushButton("Save preference")
-        save_connection.clicked.connect(self.save_connection_preference)
-        connection_lay.addWidget(save_connection)
-        connection_lay.addStretch(1)
-        self.pages.addWidget(self.connection_page)
 
         # ---------------- CONFIGURE CONTROLLER (IN-POPOVER PAGE) ----------------
         self.controller_page=QWidget()
@@ -2216,21 +2092,6 @@ class StatusPopover(QFrame):
         self.settings.setValue("shortcutButtons",[int(x.split(":")[1]) for x in controls if x.startswith("button:")])
         self.hotkey_value.setText(ShortcutDialog.shortcut_text(controls))
         self._show_page(self.home_page)
-
-    def show_connection_page(self):
-        self.connection_method_selection = str(
-            self.settings.value("preferredConnection", "auto") or "auto"
-        )
-        for method, button in self.connection_method_buttons:
-            button.setChecked(method == self.connection_method_selection)
-        self._show_page(self.connection_page)
-
-    def select_connection_method(self, method):
-        self.connection_method_selection = method
-
-    def save_connection_preference(self):
-        self.settings.setValue("preferredConnection", self.connection_method_selection)
-        self._show_page(self.shortcut_page)
 
     def show_controller_page(self):
         self.refresh_controller_page()
@@ -2607,8 +2468,11 @@ class ConnectionToast(QWidget):
         self._position_near_taskbar()
         self.show()
         self.raise_()
-        # All connection notices, including the startup status, are temporary.
-        self.hide_timer.start(5000)
+        if initial:
+            # Keep the startup waiting state visible until a controller connects.
+            self.hide_timer.stop()
+        else:
+            self.hide_timer.start(4500)
 
     def _position_near_taskbar(self):
         screen = self.app.primaryScreen()
@@ -2757,20 +2621,25 @@ class TrayApplication:
         self.popover.refresh()
 
         if connected and not self.last_connected:
-            # Replace any currently visible status toast immediately.
+            # Clear a persistent startup/disconnected notice before showing the
+            # connected notification after the tray icon has refreshed.
             self.connection_toast.hide()
-            self.show_connected_notification(info.name)
+            # Windows may display the notification before the Explorer tray
+            # finishes repainting the changed icon. Delay the toast briefly.
+            connected_name = info.name
+            QTimer.singleShot(
+                1000,
+                lambda name=connected_name: self.show_connected_notification(name)
+            )
             self.battery_timer.stop()
             QTimer.singleShot(1000, self.refresh_battery)
             self.battery_timer.start()
         elif not connected and self.last_connected:
-            # A disconnect replaces the connected toast immediately.
-            self.connection_toast.hide()
             self.battery_timer.stop()
             self.connection_toast.show_status(False)
         elif not connected and not self.has_checked_connection:
-            # Show the initial disconnected state briefly on launch.
-            self.connection_toast.hide()
+            # Give the user an explicit startup state instead of leaving them
+            # unsure whether the app is running and waiting for a controller.
             self.connection_toast.show_status(False, initial=True)
         self.last_connected = connected
         self.has_checked_connection = True
@@ -2906,10 +2775,7 @@ def main():
             return 0
         settings.setValue("firstLaunchNoticeAcknowledged", True)
 
-    if (
-        not settings.value("setupComplete", False, type=bool)
-        and not settings.value("setupSkipped", False, type=bool)
-    ):
+    if not settings.value("setupComplete", False, type=bool):
         setup_monitor = ControllerMonitor()
         setup = FirstRunSetup(setup_monitor, settings)
         result = setup.exec()
