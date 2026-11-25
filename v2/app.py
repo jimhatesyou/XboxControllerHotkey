@@ -21,11 +21,11 @@ from ctypes import wintypes
 from dataclasses import dataclass
 from typing import Optional
 
-from PySide6.QtCore import Qt, QTimer, QPoint, QRect, QSettings, QSize, QThread, Signal, QUrl
+from PySide6.QtCore import Qt, QTimer, QPoint, QRect, QSettings, QSize, QThread, Signal, QUrl, QPropertyAnimation
 from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPen, QBrush, QPixmap, QPainterPath, QRegion, QDesktopServices, QMovie
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 from PySide6.QtWidgets import (
-    QApplication, QDialog, QFrame, QHBoxLayout, QLabel, QMenu, QPushButton,
+    QApplication, QDialog, QFrame, QHBoxLayout, QLabel, QMenu, QPushButton, QGraphicsOpacityEffect,
     QSizePolicy, QSystemTrayIcon, QVBoxLayout, QWidget, QTabWidget, QStackedWidget, QMessageBox, QScrollArea, QListWidget, QCheckBox
 )
 
@@ -51,7 +51,7 @@ except Exception:
 
 
 APP_NAME = "XboxControllerHotkey"
-APP_VERSION = "2.0.17"
+APP_VERSION = "2.0.18"
 ACCESSORIES_AUMID = r"Microsoft.XboxDevices_8wekyb3d8bbwe!App"
 ACCESSORIES_STORE_URI = "ms-windows-store://pdp/?productid=9NBLGGH30XJ3"
 CAPTURE_SETTINGS_URI = "ms-settings:gaming-gamedvr"
@@ -1715,8 +1715,7 @@ class StatusPopover(QFrame):
 
         created=QLabel(
             'Created by <a href="https://linktr.ee/jimhatesyou" '
-            'style="color:#B8C1CE;text-decoration:underline;">James Cavanaugh</a>. '
-            'Thank you for using XboxControllerHotkey.'
+            'style="color:#B8C1CE;text-decoration:underline;">James Cavanaugh</a>.'
         )
         created.setTextFormat(Qt.TextFormat.RichText)
         created.setOpenExternalLinks(True)
@@ -1759,6 +1758,11 @@ class StatusPopover(QFrame):
         about_lay.addWidget(first_launch_button)
 
         about_lay.addStretch(1)
+
+        thank_you=QLabel("Thank you for using XboxControllerHotkey.")
+        thank_you.setStyleSheet("color:#FFFFFF;font-size:14px;")
+        thank_you.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        about_lay.addWidget(thank_you)
 
         coffee=QLabel('<a href="https://www.buymeacoffee.com/jimhatesyou" style="color:#00D451; text-decoration:underline;">Buy me a coffee</a>')
         coffee.setOpenExternalLinks(True)
@@ -2477,6 +2481,13 @@ class ConnectionToast(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setFixedSize(360, 104)
 
+        self.opacity_effect = QGraphicsOpacityEffect(self)
+        self.opacity_effect.setOpacity(1.0)
+        self.setGraphicsEffect(self.opacity_effect)
+        self.fade_animation = QPropertyAnimation(self.opacity_effect, b"opacity", self)
+        self.fade_animation.setDuration(220)
+        self.fade_animation.finished.connect(self.hide)
+
         shell = QFrame(self)
         shell.setObjectName("toastShell")
         shell.setGeometry(0, 0, 360, 104)
@@ -2523,9 +2534,30 @@ class ConnectionToast(QWidget):
         text_layout.addWidget(self.body_label)
         layout.addLayout(text_layout, 1)
 
+        self.close_button = QPushButton("×")
+        self.close_button.setFixedSize(22, 22)
+        self.close_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.close_button.setToolTip("Close notification")
+        self.close_button.setStyleSheet(
+            "QPushButton{color:#AEB7C4;background:transparent;border:0;"
+            "font-size:20px;font-weight:400;padding:0;margin:0;}"
+            "QPushButton:hover{color:#FFFFFF;}"
+        )
+        self.close_button.clicked.connect(self.fade_out)
+        layout.addWidget(self.close_button, 0, Qt.AlignmentFlag.AlignTop)
+
         self.hide_timer = QTimer(self)
         self.hide_timer.setSingleShot(True)
-        self.hide_timer.timeout.connect(self.hide)
+        self.hide_timer.timeout.connect(self.fade_out)
+
+    def fade_out(self):
+        self.hide_timer.stop()
+        self.fade_animation.stop()
+        if not self.isVisible():
+            return
+        self.fade_animation.setStartValue(self.opacity_effect.opacity())
+        self.fade_animation.setEndValue(0.0)
+        self.fade_animation.start()
 
     def show_status(self, connected, device_name="", initial=False):
         icon = make_tray_icon(bool(connected)).pixmap(42, 42)
@@ -2536,14 +2568,14 @@ class ConnectionToast(QWidget):
             self.body_label.setText("No controller detected.\nAwaiting connection...")
         else:
             self.body_label.setText("Controller disconnected.\nAwaiting connection...")
+        self.hide_timer.stop()
+        self.fade_animation.stop()
+        self.opacity_effect.setOpacity(1.0)
         self._position_near_taskbar()
         self.show()
         self.raise_()
-        if initial:
-            # Keep the startup waiting state visible until a controller connects.
-            self.hide_timer.stop()
-        else:
-            self.hide_timer.start(4500)
+        # Every controller-status notification has the same five-second lifetime.
+        self.hide_timer.start(5000)
 
     def _position_near_taskbar(self):
         screen = self.app.primaryScreen()
