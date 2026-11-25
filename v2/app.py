@@ -1300,10 +1300,6 @@ class UpdatePromptDialog(QDialog):
         self.choice = "update"
         self.accept()
 
-
-def self_version():
-    return APP_VERSION
-
 class UpdateDownloadWorker(QThread):
     result=Signal(bool,str)
     def __init__(self, exe_url, sha_url, parent=None):
@@ -2234,10 +2230,22 @@ class StatusPopover(QFrame):
             return
         current=os.path.abspath(sys.executable); downloaded=os.path.abspath(value)
         helper=os.path.join(tempfile.gettempdir(),f"XboxControllerHotkey-updater-{os.getpid()}.ps1")
+        log_path=os.path.join(tempfile.gettempdir(),"XboxControllerHotkey-update.log")
         script=("$ErrorActionPreference='Stop'\n"+
             f"$pidToWait={os.getpid()}\n$source='{downloaded.replace(chr(39), chr(39)*2)}'\n$target='{current.replace(chr(39), chr(39)*2)}'\n"+
-            "while (Get-Process -Id $pidToWait -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 400 }\n"+
-            "$tmp=$target+'.new'\nCopy-Item -LiteralPath $source -Destination $tmp -Force\nMove-Item -LiteralPath $tmp -Destination $target -Force\nRemove-Item -LiteralPath $source -Force -ErrorAction SilentlyContinue\nStart-Process -FilePath $target\n")
+            f"$log='{log_path.replace(chr(39), chr(39)*2)}'\n"+
+            "try {\n"+
+            "  while (Get-Process -Id $pidToWait -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 300 }\n"+
+            "  $tmp=$target+'.new'\n"+
+            "  Copy-Item -LiteralPath $source -Destination $tmp -Force\n"+
+            "  $installed=$false\n"+
+            "  for ($i=0; $i -lt 20 -and -not $installed; $i++) {\n"+
+            "    try { if (Test-Path -LiteralPath $target) { [System.IO.File]::Replace($tmp,$target,$null) } else { Move-Item -LiteralPath $tmp -Destination $target -Force }; $installed=$true } catch { Start-Sleep -Milliseconds 500 }\n"+
+            "  }\n"+
+            "  if (-not $installed) { throw 'Could not replace the existing executable. Check that the application folder is writable.' }\n"+
+            "  Remove-Item -LiteralPath $source -Force -ErrorAction SilentlyContinue\n"+
+            "  Start-Process -FilePath $target\n"+
+            "} catch { $_ | Out-String | Set-Content -LiteralPath $log; if (Test-Path -LiteralPath $target) { Start-Process -FilePath $target } }\n")
         try:
             with open(helper,"w",encoding="utf-8") as f: f.write(script)
             subprocess.Popen(["powershell.exe","-NoProfile","-ExecutionPolicy","Bypass","-WindowStyle","Hidden","-File",helper],creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0),close_fds=True)
