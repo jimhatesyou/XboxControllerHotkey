@@ -46,8 +46,7 @@ This release includes the V2.0.12 foundation and the improvements added through 
 - Downloads the standalone Windows executable directly from the latest stable GitHub release.
 - Verifies the downloaded executable against its published SHA256 checksum before installation.
 - Closes the running application, replaces the existing executable, and relaunches the updated version.
-- Adds matching Update now, Remind me later, and Do not ask me again controls to the tray popover's About page.
-- Keeps the prompt preference synchronized between the launch dialog and the popover.
+- Keeps a manual Update now action available from About when an update is detected.
 
 ## Fixes & Reliability
 
