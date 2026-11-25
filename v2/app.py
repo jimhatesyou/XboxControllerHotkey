@@ -2471,12 +2471,13 @@ class XInputHotkeyWorker(threading.Thread):
 
 
 class ConnectionToast(QWidget):
-    """Small custom notification with an explicitly controlled controller-status icon."""
-    def __init__(self, app):
+    """Five-second, dismissible controller-status notification."""
+    def __init__(self, app, tray=None):
         super().__init__(None, Qt.WindowType.ToolTip |
                          Qt.WindowType.FramelessWindowHint |
                          Qt.WindowType.WindowStaysOnTopHint)
         self.app = app
+        self.tray = tray
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setFixedSize(360, 104)
@@ -2578,10 +2579,31 @@ class ConnectionToast(QWidget):
         self.hide_timer.start(5000)
 
     def _position_near_taskbar(self):
-        screen = self.app.primaryScreen()
+        # Anchor the toast to the notification-area icon. availableGeometry()
+        # can extend beneath an auto-hidden taskbar while it is sliding out.
+        tray_rect = self.tray.geometry() if self.tray is not None else QRect()
+        screen = (self.app.screenAt(tray_rect.center()) if tray_rect.isValid()
+                  else self.app.primaryScreen())
         if screen is None:
             return
+
+        bounds = screen.geometry()
         area = screen.availableGeometry()
+        if tray_rect.isValid():
+            # Keep the toast outside the system-tray area. For a bottom
+            # taskbar, show above the tray; for a top taskbar, show below it.
+            above = tray_rect.center().y() >= bounds.center().y()
+            y = (tray_rect.top() - self.height() - 10 if above
+                 else tray_rect.bottom() + 10)
+            x = tray_rect.left() - self.width() - 12
+            if x < bounds.left() + 8:
+                x = tray_rect.right() + 12
+            x = max(bounds.left() + 8, min(x, bounds.right() - self.width() - 8))
+            y = max(bounds.top() + 8, min(y, bounds.bottom() - self.height() - 8))
+            self.move(x, y)
+            return
+
+        # Fallback until Windows exposes the tray icon's screen rectangle.
         x = area.right() - self.width() - 12
         y = area.bottom() - self.height() - 12
         self.move(max(area.left(), x), max(area.top(), y))
@@ -2606,7 +2628,7 @@ class TrayApplication:
                 self.monitor.shortcut_controls = [f"button:{b}" for b in DEFAULT_SHORTCUT]
         self.tray = QSystemTrayIcon(make_tray_icon(False), app)
         self.tray.setToolTip(self.tray_tooltip_text(None))
-        self.connection_toast = ConnectionToast(app)
+        self.connection_toast = ConnectionToast(app, self.tray)
         self.popover = StatusPopover(self.monitor, self.tray, self.settings)
         self.last_connected = False
         self.has_checked_connection = False
