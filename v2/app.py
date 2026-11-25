@@ -1283,7 +1283,7 @@ class UpdatePromptDialog(QDialog):
         versions.setStyleSheet("color:#C5CCD6;font-size:12px;padding:7px 0;")
         layout.addWidget(versions)
 
-        update = QPushButton("Update now")
+        update = QPushButton("Update Now")
         update.setDefault(True)
         update.clicked.connect(self._update)
         layout.addWidget(update)
