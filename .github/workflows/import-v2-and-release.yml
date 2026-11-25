@@ -1,4 +1,4 @@
-name: Import V2 source and build portable release
+name: Build and publish XboxControllerHotkey
 
 on:
   workflow_dispatch:
@@ -6,14 +6,14 @@ on:
       release_tag:
         description: "Release tag"
         required: true
-        default: "v2.0.12"
+        default: "v2.0.13"
         type: string
 
 permissions:
   contents: write
 
 jobs:
-  import-build-release:
+  build-release:
     runs-on: windows-latest
     steps:
       - name: Check out repository
@@ -21,27 +21,6 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
-
-      - name: Extract V2 source into v2/
-        shell: pwsh
-        run: |
-          $temp = Join-Path $env:RUNNER_TEMP "xbox-hotkey-v2-source"
-          Expand-Archive -LiteralPath "XboxControllerHotkey-v2.0.12-Source.zip" -DestinationPath $temp -Force
-          New-Item -ItemType Directory -Path "v2" -Force | Out-Null
-          Get-ChildItem -LiteralPath $temp -Force |
-            Where-Object { $_.Name -notin @("__pycache__", ".github") } |
-            ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination "v2" -Recurse -Force }
-
-      - name: Commit imported source
-        shell: pwsh
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add v2/
-          if (-not (git diff --cached --quiet)) {
-            git commit -m "Import XboxControllerHotkey V2.0.12 source"
-            git push origin HEAD:main
-          }
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -75,7 +54,7 @@ jobs:
           tag_name: ${{ inputs.release_tag }}
           target_commitish: main
           name: XboxControllerHotkey ${{ inputs.release_tag }}
-          body_path: v2/RELEASE_NOTES_V2.0.12.md
+          body_path: v2/RELEASE_NOTES_V2.0.13.md
           files: |
             v2/dist/XboxControllerHotkey.exe
             v2/dist/XboxControllerHotkey.exe.sha256
