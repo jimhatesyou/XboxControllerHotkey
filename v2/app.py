@@ -26,7 +26,7 @@ from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPen, QBrush, QPixmap,
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 from PySide6.QtWidgets import (
     QApplication, QDialog, QFrame, QHBoxLayout, QLabel, QMenu, QPushButton,
-    QSizePolicy, QSystemTrayIcon, QVBoxLayout, QWidget, QTabWidget, QStackedWidget, QMessageBox, QScrollArea, QListWidget
+    QSizePolicy, QSystemTrayIcon, QVBoxLayout, QWidget, QTabWidget, QStackedWidget, QMessageBox, QScrollArea, QListWidget, QCheckBox
 )
 
 # The app lives in the tray while games own foreground focus. SDL disables
@@ -51,7 +51,7 @@ except Exception:
 
 
 APP_NAME = "XboxControllerHotkey"
-APP_VERSION = "2.0.12"
+APP_VERSION = "2.0.15"
 ACCESSORIES_AUMID = r"Microsoft.XboxDevices_8wekyb3d8bbwe!App"
 ACCESSORIES_STORE_URI = "ms-windows-store://pdp/?productid=9NBLGGH30XJ3"
 CAPTURE_SETTINGS_URI = "ms-settings:gaming-gamedvr"
@@ -1258,25 +1258,51 @@ class UpdatePromptDialog(QDialog):
         self.setWindowTitle("Update available")
         self.setModal(True)
         self.setFixedWidth(390)
-        self.setStyleSheet("QDialog{background:#17191F;color:#F2F4F7;} QLabel{color:#F2F4F7;} QPushButton{background:#00D451;color:#06130A;border:0;border-radius:9px;padding:11px;font-weight:700;min-height:20px;} QPushButton:hover{background:#12E56A;} QPushButton#secondary{background:#262D38;color:#E8EDF4;border:1px solid #414956;} QPushButton#secondary:hover{background:#343D4A;color:white;}")
-        self.choice="later"
-        layout=QVBoxLayout(self); layout.setContentsMargins(22,20,22,18); layout.setSpacing(10)
-        title=QLabel("XboxControllerHotkey — Update available")
+        self.setStyleSheet("""
+            QDialog{background:#17191F;color:#F2F4F7;}
+            QLabel{color:#F2F4F7;}
+            QPushButton{background:#00D451;color:#06130A;border:0;border-radius:9px;padding:11px;font-weight:700;min-height:20px;}
+            QPushButton:hover{background:#12E56A;}
+            QPushButton#secondary{background:#262D38;color:#E8EDF4;border:1px solid #414956;}
+            QPushButton#secondary:hover{background:#343D4A;color:white;}
+            QCheckBox{color:#AEB7C4;font-size:11px;spacing:7px;}
+        """)
+        self.choice = "later"
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(22, 20, 22, 18)
+        layout.setSpacing(10)
+
+        title = QLabel("Do you want to update now?")
         title.setStyleSheet("font-size:16px;font-weight:750;color:#F2F4F7;")
         layout.addWidget(title)
-        desc=QLabel("A newer version of XboxControllerHotkey is available.")
-        desc.setWordWrap(True); layout.addWidget(desc)
-        versions=QLabel(f"Installed version:  v{APP_VERSION}\nLatest version:      v{latest_version}")
+
+        versions = QLabel(
+            f"XboxControllerHotkey v{self_version()} is installed.\n"
+            f"Version v{latest_version} is available."
+        )
         versions.setStyleSheet("color:#C5CCD6;font-size:12px;padding:7px 0;")
         layout.addWidget(versions)
-        update=QPushButton("Update now"); update.setDefault(True); update.clicked.connect(self._update); layout.addWidget(update)
-        later=QPushButton("Remind me next time"); later.setObjectName("secondary"); later.clicked.connect(self.reject); layout.addWidget(later)
-        disable=QPushButton("Don't check for updates at startup")
-        disable.setStyleSheet("QPushButton{background:transparent;border:0;color:#00D451;text-decoration:underline;font-size:11px;padding:4px;}")
-        disable.clicked.connect(self._disable); layout.addWidget(disable)
-    def _update(self): self.choice="update"; self.accept()
-    def _disable(self): self.choice="disable"; self.accept()
 
+        update = QPushButton("Update now")
+        update.setDefault(True)
+        update.clicked.connect(self._update)
+        layout.addWidget(update)
+
+        later = QPushButton("Remind me later")
+        later.setObjectName("secondary")
+        later.clicked.connect(self.reject)
+        layout.addWidget(later)
+
+        self.do_not_ask = QCheckBox("Do not ask me again")
+        layout.addWidget(self.do_not_ask)
+
+    def _update(self):
+        self.choice = "update"
+        self.accept()
+
+
+def self_version():
+    return APP_VERSION
 
 class UpdateDownloadWorker(QThread):
     result=Signal(bool,str)
@@ -2175,11 +2201,15 @@ class StatusPopover(QFrame):
         if latest>current:
             self.update_status.setText(f"Update available: v{self.latest_release_tag} (installed: v{APP_VERSION}).")
             self.release_button.setVisible(True)
-            if automatic and not bool(self.settings.value("disableStartupUpdateChecks", False, type=bool)):
-                prompt=UpdatePromptDialog(self.latest_release_tag,None)
-                if prompt.exec()==QDialog.DialogCode.Accepted:
-                    if prompt.choice=="update": self.begin_auto_update()
-                    elif prompt.choice=="disable": self.settings.setValue("disableStartupUpdateChecks",True)
+            # Manual checks always offer the update prompt. The opt-out only
+            # suppresses unsolicited prompts during startup checks.
+            if not automatic or not bool(self.settings.value("disableUpdatePrompts", False, type=bool)):
+                prompt = UpdatePromptDialog(self.latest_release_tag, self)
+                prompt_result = prompt.exec()
+                if prompt.do_not_ask.isChecked():
+                    self.settings.setValue("disableUpdatePrompts", True)
+                if prompt_result == QDialog.DialogCode.Accepted and prompt.choice == "update":
+                    self.begin_auto_update()
         elif latest==current:
             if hasattr(self, "update_status"): self.update_status.setText(f"You're up to date — v{APP_VERSION}.")
         else:
