@@ -1733,21 +1733,6 @@ class StatusPopover(QFrame):
         self.install_update_button.clicked.connect(self.begin_auto_update)
         about_lay.addWidget(self.install_update_button)
 
-        self.remind_update_button=QPushButton("Remind me later")
-        self.remind_update_button.setObjectName("secondary")
-        self.remind_update_button.setVisible(False)
-        self.remind_update_button.clicked.connect(self.dismiss_update_options)
-        about_lay.addWidget(self.remind_update_button)
-
-        self.disable_update_prompts_checkbox=QCheckBox("Do not ask me again")
-        self.disable_update_prompts_checkbox.setStyleSheet("color:#A7AFBB;font-size:11px;")
-        self.disable_update_prompts_checkbox.setChecked(
-            bool(self.settings.value("disableUpdatePrompts", False, type=bool))
-        )
-        self.disable_update_prompts_checkbox.setVisible(False)
-        self.disable_update_prompts_checkbox.toggled.connect(self.set_update_prompt_preference)
-        about_lay.addWidget(self.disable_update_prompts_checkbox)
-
         faq_button=QPushButton("FAQs")
         faq_button.setObjectName("secondary")
         faq_button.clicked.connect(self.show_faq)
@@ -2183,8 +2168,6 @@ class StatusPopover(QFrame):
         if hasattr(self, "check_button"): self.check_button.setEnabled(False)
         if hasattr(self, "release_button"): self.release_button.setVisible(False)
         if hasattr(self, "install_update_button"): self.install_update_button.setVisible(False)
-        if hasattr(self, "remind_update_button"): self.remind_update_button.setVisible(False)
-        if hasattr(self, "disable_update_prompts_checkbox"): self.disable_update_prompts_checkbox.setVisible(False)
         if not automatic and hasattr(self, "update_status"): self.update_status.setText("Checking GitHub releases…")
         self.update_checked=False; self.update_timed_out=False
         worker=UpdateCheckWorker(self); self.update_worker=worker; self.update_workers.append(worker)
@@ -2222,18 +2205,11 @@ class StatusPopover(QFrame):
             self.release_button.setVisible(True)
             if hasattr(self, "install_update_button"):
                 self.install_update_button.setVisible(True)
-                self.remind_update_button.setVisible(True)
-                self.disable_update_prompts_checkbox.blockSignals(True)
-                self.disable_update_prompts_checkbox.setChecked(
-                    bool(self.settings.value("disableUpdatePrompts", False, type=bool))
-                )
-                self.disable_update_prompts_checkbox.blockSignals(False)
-                self.disable_update_prompts_checkbox.setVisible(True)
             if not bool(self.settings.value("disableUpdatePrompts", False, type=bool)):
                 prompt = UpdatePromptDialog(self.latest_release_tag, self)
                 prompt_result = prompt.exec()
                 if prompt.do_not_ask.isChecked():
-                    self.set_update_prompt_preference(True)
+                    self.settings.setValue("disableUpdatePrompts", True)
                 if prompt_result == QDialog.DialogCode.Accepted and prompt.choice == "update":
                     self.begin_auto_update()
         elif latest==current:
@@ -2241,24 +2217,6 @@ class StatusPopover(QFrame):
         else:
             if hasattr(self, "update_status"): self.update_status.setText(f"You're running v{APP_VERSION}, newer than the latest published release v{self.latest_release_tag}. This is a development build.")
         self.update_worker=None
-
-    def set_update_prompt_preference(self, disabled):
-        """Keep the launch dialog and popover preference in sync."""
-        self.settings.setValue("disableUpdatePrompts", bool(disabled))
-        checkbox = getattr(self, "disable_update_prompts_checkbox", None)
-        if checkbox is not None and checkbox.isChecked() != bool(disabled):
-            checkbox.blockSignals(True)
-            checkbox.setChecked(bool(disabled))
-            checkbox.blockSignals(False)
-
-    def dismiss_update_options(self):
-        """Dismiss the current popover update offer without changing the installed version."""
-        self.install_update_button.setVisible(False)
-        self.remind_update_button.setVisible(False)
-        self.disable_update_prompts_checkbox.setVisible(False)
-        self.update_status.setText(
-            f"Update v{self.latest_release_tag} is available. You can check again from About."
-        )
 
     def begin_auto_update(self):
         if not getattr(sys,"frozen",False) or os.name!="nt":
