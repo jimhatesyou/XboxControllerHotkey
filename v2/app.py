@@ -2183,6 +2183,8 @@ class StatusPopover(QFrame):
         if hasattr(self, "check_button"): self.check_button.setEnabled(False)
         if hasattr(self, "release_button"): self.release_button.setVisible(False)
         if hasattr(self, "install_update_button"): self.install_update_button.setVisible(False)
+        if hasattr(self, "remind_update_button"): self.remind_update_button.setVisible(False)
+        if hasattr(self, "disable_update_prompts_checkbox"): self.disable_update_prompts_checkbox.setVisible(False)
         if not automatic and hasattr(self, "update_status"): self.update_status.setText("Checking GitHub releases…")
         self.update_checked=False; self.update_timed_out=False
         worker=UpdateCheckWorker(self); self.update_worker=worker; self.update_workers.append(worker)
@@ -2243,6 +2245,11 @@ class StatusPopover(QFrame):
     def set_update_prompt_preference(self, disabled):
         """Keep the launch dialog and popover preference in sync."""
         self.settings.setValue("disableUpdatePrompts", bool(disabled))
+        checkbox = getattr(self, "disable_update_prompts_checkbox", None)
+        if checkbox is not None and checkbox.isChecked() != bool(disabled):
+            checkbox.blockSignals(True)
+            checkbox.setChecked(bool(disabled))
+            checkbox.blockSignals(False)
 
     def dismiss_update_options(self):
         """Dismiss the current popover update offer without changing the installed version."""
