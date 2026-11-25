@@ -6,7 +6,7 @@ on:
       release_tag:
         description: "Release tag"
         required: true
-        default: "v2.0.17"
+        default: "v2.0.18"
         type: string
 
 permissions:
@@ -54,7 +54,7 @@ jobs:
           tag_name: ${{ inputs.release_tag }}
           target_commitish: main
           name: XboxControllerHotkey ${{ inputs.release_tag }}
-          body_path: v2/RELEASE_NOTES_V2.0.17.md
+          body_path: v2/RELEASE_NOTES_V2.0.18.md
           files: |
             v2/dist/XboxControllerHotkey.exe
             v2/dist/XboxControllerHotkey.exe.sha256
