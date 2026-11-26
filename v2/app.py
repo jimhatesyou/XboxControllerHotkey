@@ -569,6 +569,20 @@ class ControllerMonitor:
             return xinput_flags_to_controls(flags)
         return None
 
+    def xinput_activity_level(self):
+        """Normalized XInput activity from buttons, triggers and thumbsticks."""
+        if self._xinput_get_state is None: return 0.0
+        for user_index in range(4):
+            state=XINPUT_STATE()
+            if self._xinput_get_state(user_index,ctypes.byref(state))!=0: continue
+            pad=state.Gamepad
+            values=[abs(int(pad.sThumbLX))/32767.0,abs(int(pad.sThumbLY))/32767.0,
+                    abs(int(pad.sThumbRX))/32767.0,abs(int(pad.sThumbRY))/32767.0,
+                    int(pad.bLeftTrigger)/255.0,int(pad.bRightTrigger)/255.0]
+            if int(pad.wButtons): values.append(0.72)
+            return max(values)
+        return 0.0
+
     def refresh(self) -> Optional[ControllerInfo]:
         # SDL enumeration can occasionally take noticeable time. The caller
         # runs this method on a dedicated worker; this lock keeps fallback
@@ -1471,7 +1485,7 @@ class ActivityGraph(QWidget):
             x=(i/(len(self.samples)-1))*w; y=baseline-value*(h-29)
             if i==0: path.moveTo(x,y)
             else: path.lineTo(x,y)
-        area=QPainterPath(path); area.lineTo(w,baseline); area.lineTo(0,baseline); area.closeSubpath()
+        area=QPainterPath(path); area.lineTo(w,h); area.lineTo(0,h); area.closeSubpath()
         alpha=int(26+76*max(self.samples or [0.0]))
         gradient=QLinearGradient(0,0,0,h); gradient.setColorAt(0,QColor(0,212,81,alpha)); gradient.setColorAt(1,QColor(0,212,81,0))
         painter.fillPath(area,gradient)
@@ -2448,10 +2462,12 @@ class StatusPopover(QFrame):
 
 class XInputHotkeyWorker(threading.Thread):
     """Dedicated low-latency XInput poller for Xbox controllers during gameplay."""
-    def __init__(self, monitor, log_callback):
+    def __init__(self, monitor, log_callback, activity_callback=None, record_callback=None):
         super().__init__(name="XboxControllerHotkey-XInput", daemon=True)
         self.monitor = monitor
         self.log_callback = log_callback
+        self.activity_callback = activity_callback or (lambda value: None)
+        self.record_callback = record_callback or (lambda: None)
         self.stop_event = threading.Event()
 
     def stop(self):
@@ -2477,6 +2493,7 @@ class XInputHotkeyWorker(threading.Thread):
         while not self.stop_event.is_set():
             try:
                 controls = self.monitor.xinput_pressed_controls()
+                self.activity_callback(self.monitor.xinput_activity_level())
                 if controls is None:
                     if was_connected:
                         self.log_callback("XInput controller disconnected.")
@@ -2506,6 +2523,7 @@ class XInputHotkeyWorker(threading.Thread):
                     self.log_callback(
                         f"XInput shortcut matched ({self.monitor.shortcut_controls}); sending Win+Alt+G"
                     )
+                    self.record_callback()
                     send_game_bar_record_that()
 
                 previous_combo = bool(combo)
@@ -2676,7 +2694,19 @@ class TrayApplication:
         self.tray = QSystemTrayIcon(make_tray_icon(False), app)
         self.tray.setToolTip(self.tray_tooltip_text(None))
         self.connection_toast = ConnectionToast(app, self.tray)
+        self.input_activity = 0.0
         self.popover = StatusPopover(self.monitor, self.tray, self.settings)
+        self.popover.activity_source = lambda: self.input_activity
+        self.clip_count = int(self.settings.value("lifetimeClipCount",0,type=int))
+        self.pending_capture_triggers = [float(x) for x in (self.settings.value("pendingCaptureTriggers",[]) or [])]
+        self.known_capture_files = {os.path.normcase(os.path.abspath(x[0])) for x in self._capture_files()}
+        self.capture_file_states = {}
+        self._counted_capture_files = set(self.settings.value("countedCaptureFiles",[]) or [])
+        self.popover.clip_count_value.setText(str(self.clip_count))
+        self.capture_scan_timer = QTimer()
+        self.capture_scan_timer.setInterval(2000)
+        self.capture_scan_timer.timeout.connect(self.scan_capture_files)
+        self.capture_scan_timer.start()
         self.last_connected = False
         self.has_checked_connection = False
         self.last_logged_controls = set()
@@ -2688,7 +2718,8 @@ class TrayApplication:
         self.tray.show()
 
         # Xbox pads use a dedicated XInput thread, independent of the UI loop.
-        self.xinput_worker = XInputHotkeyWorker(self.monitor, self._write_input_log)
+        self.xinput_worker = XInputHotkeyWorker(self.monitor, self._write_input_log,
+                                                self.set_input_activity, self.note_record_that_trigger)
         self.xinput_worker.start()
 
         # SDL fallback poll for supported non-XInput controllers (PlayStation/Switch).
@@ -2849,9 +2880,67 @@ class TrayApplication:
                 self._write_input_log(
                     f"shortcut matched ({self.monitor.shortcut_controls}); sending Win+Alt+G"
                 )
+                self.note_record_that_trigger()
                 send_game_bar_record_that()
+            level=0.72 if controls else 0.0
+            try:
+                for joystick in self.monitor.joysticks:
+                    for axis_index in range(joystick.get_numaxes()):
+                        level=max(level,min(1.0,abs(float(joystick.get_axis(axis_index)))))
+            except Exception:
+                pass
+            self.set_input_activity(level)
         except Exception as exc:
             self._write_input_log(f"poll error: {exc!r}")
+
+    def set_input_activity(self,value):
+        self.input_activity=max(0.0,min(1.0,float(value)))
+
+    def _capture_files(self):
+        folder=capture_folder_path()
+        files=[]
+        if not os.path.isdir(folder): return files
+        try:
+            for root,dirs,names in os.walk(folder):
+                dirs[:]=[d for d in dirs if d.lower() not in ("thumbnails","temp")]
+                for name in names:
+                    if os.path.splitext(name)[1].lower() in (".mp4",".mkv",".mov"):
+                        path=os.path.join(root,name)
+                        try: files.append((path,os.path.getctime(path),os.path.getsize(path)))
+                        except OSError: pass
+        except OSError: pass
+        return files
+
+    def note_record_that_trigger(self):
+        now=time.time()
+        self.pending_capture_triggers=[t for t in self.pending_capture_triggers if now-t<180]
+        self.pending_capture_triggers.append(now)
+        self.settings.setValue("pendingCaptureTriggers",self.pending_capture_triggers)
+
+    def scan_capture_files(self):
+        now=time.time()
+        self.pending_capture_triggers=[t for t in self.pending_capture_triggers if now-t<180]
+        for path,created,size in self._capture_files():
+            normalized=os.path.normcase(os.path.abspath(path))
+            if normalized in self.known_capture_files or normalized in self._counted_capture_files: continue
+            matching=next((t for t in self.pending_capture_triggers if -3<=created-t<=180),None)
+            if matching is None:
+                self.known_capture_files.add(normalized)
+                continue
+            previous=self.capture_file_states.get(normalized)
+            stable=previous[1]+1 if previous and previous[0]==size else 0
+            self.capture_file_states[normalized]=(size,stable,created)
+            if stable>=2:
+                self.clip_count+=1
+                self.settings.setValue("lifetimeClipCount",self.clip_count)
+                self._counted_capture_files.add(normalized)
+                self.settings.setValue("countedCaptureFiles",list(self._counted_capture_files)[-5000:])
+                self.pending_capture_triggers.remove(matching)
+                self.settings.setValue("pendingCaptureTriggers",self.pending_capture_triggers)
+                self.popover.clip_count_value.setText(str(self.clip_count))
+                self.known_capture_files.add(normalized)
+                self.capture_file_states.pop(normalized,None)
+        self.settings.setValue("pendingCaptureTriggers",self.pending_capture_triggers)
 
     def _write_input_log(self, message):
         try:
@@ -2866,6 +2955,7 @@ class TrayApplication:
 
     def quit(self):
         self.input_timer.stop()
+        self.capture_scan_timer.stop()
         self.xinput_worker.stop()
         self.xinput_worker.join(timeout=1.0)
         self.monitor_timer.stop()
