@@ -1572,8 +1572,8 @@ class StatusPopover(QFrame):
             QPushButton:pressed { background: #00B948; }
             QPushButton#actionButton {
                 background:#00D451; color:#FFFFFF; border:0; border-radius:9px;
-                padding:0px; min-height:74px; max-height:74px;
-                font-size:11px; font-weight:700;
+                padding:0px; min-height:88px; max-height:88px;
+                font-size:15px; font-weight:800;
             }
             QPushButton#actionButton:hover { background:#12E56A; }
             QPushButton#actionButton:pressed { background:#00B948; }
@@ -1582,7 +1582,7 @@ class StatusPopover(QFrame):
                 border: 1px solid rgba(130,140,155,65);
                 border-radius: 9px; padding: 8px 10px;
                 min-height: 38px; max-height: 38px;
-                font-size: 12px; font-weight: 650;
+                font-size: 16px; font-weight: 800;
             }
             QPushButton#secondary:hover { background: #343D4A; color: white; }
             QPushButton#back {
@@ -1595,7 +1595,7 @@ class StatusPopover(QFrame):
         """)
 
         outer=QVBoxLayout(self)
-        outer.setContentsMargins(16,14,16,0)
+        outer.setContentsMargins(16,0,16,0)
         outer.setSpacing(0)
 
         self.pages=QStackedWidget()
@@ -1608,9 +1608,10 @@ class StatusPopover(QFrame):
         root.setSpacing(6)
 
         header=QHBoxLayout()
-        header.setContentsMargins(0,-7,0,0)
+        header.setContentsMargins(0,-8,0,0)
         brand_col=QVBoxLayout()
-        brand_col.setSpacing(1)
+        brand_col.setContentsMargins(0,0,0,0)
+        brand_col.setSpacing(0)
         brand=QLabel(APP_NAME)
         brand.setObjectName("title")
         brand_font=QFont(brand.font())
@@ -1620,6 +1621,7 @@ class StatusPopover(QFrame):
         brand.setFont(brand_font)
         brand_col.addWidget(brand)
         app_version=QLabel(f"Version {APP_VERSION}")
+        app_version.setContentsMargins(0,0,0,0)
         app_version.setStyleSheet("color:#A7AFBB;font-size:10px;font-weight:500;")
         brand_col.addWidget(app_version)
         header.addLayout(brand_col)
@@ -1732,7 +1734,7 @@ class StatusPopover(QFrame):
         self.clips_button.setStyleSheet("QPushButton{background:rgba(38,45,56,225);color:#FFFFFF;border:2px solid #00D451;border-radius:12px;padding:5px;min-height:48px;max-height:48px;} QPushButton:hover{background:#25342D;}")
         clips_lay=QHBoxLayout(self.clips_button); clips_lay.setContentsMargins(8,2,8,2); clips_lay.setSpacing(7)
         clips_icon=QLabel("▣"); clips_icon.setStyleSheet("font-size:22px;color:#FFFFFF;"); clips_lay.addWidget(clips_icon)
-        clips_label=QLabel("Clips Captured"); clips_label.setStyleSheet("font-size:12px;color:#E8EDF4;"); clips_lay.addWidget(clips_label); clips_lay.addStretch()
+        clips_label=QLabel("Clips Captured"); clips_label.setStyleSheet("font-size:16px;font-weight:800;color:#FFFFFF;"); clips_lay.addWidget(clips_label); clips_lay.addStretch()
         self.clip_count_value=QLabel("0"); self.clip_count_value.setStyleSheet("font-size:22px;font-weight:800;color:#FFFFFF;"); clips_lay.addWidget(self.clip_count_value)
         self.clips_button.clicked.connect(self.open_captures_folder); secondary_row.addWidget(self.clips_button,1)
         about_button=QPushButton("ⓘ   About"); about_button.setObjectName("secondary"); about_button.clicked.connect(self.open_about)
@@ -1740,14 +1742,18 @@ class StatusPopover(QFrame):
         footer=QHBoxLayout()
         footer.setSpacing(6)
         footer.setContentsMargins(0, 0, 0, 0)
-        footer.addWidget(status_wrap,alignment=Qt.AlignmentFlag.AlignVCenter)
+        footer.addWidget(status_wrap,alignment=Qt.AlignmentFlag.AlignBottom)
         footer.addStretch()
+        powered_group=QWidget()
+        powered_layout=QHBoxLayout(powered_group)
+        powered_layout.setContentsMargins(0,0,0,0)
+        powered_layout.setSpacing(5)
         powered=QLabel("Powered by")
         powered.setObjectName("subtitle")
-        footer.addWidget(powered,alignment=Qt.AlignmentFlag.AlignVCenter)
+        powered_layout.addWidget(powered,alignment=Qt.AlignmentFlag.AlignVCenter)
         logo=QLabel()
         logo.setFixedSize(48,48)
-        logo.setAlignment(Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter)
+        logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.powered_movie=QMovie(resource_path(os.path.join("assets","powered-by-logo.gif")))
         if self.powered_movie.isValid():
             self.powered_movie.setScaledSize(QSize(48,48))
@@ -1758,7 +1764,8 @@ class StatusPopover(QFrame):
             if not logo_pix.isNull():
                 logo.setPixmap(logo_pix.scaled(QSize(48,48),Qt.AspectRatioMode.KeepAspectRatio,
                                                Qt.TransformationMode.SmoothTransformation))
-        footer.addWidget(logo,alignment=Qt.AlignmentFlag.AlignBottom)
+        powered_layout.addWidget(logo,alignment=Qt.AlignmentFlag.AlignVCenter)
+        footer.addWidget(powered_group,alignment=Qt.AlignmentFlag.AlignVCenter)
         root.addLayout(footer)
         self.activity_graph=ActivityGraph(self.home_page)
         self.activity_graph.activity_source=lambda: getattr(self,"activity_source",lambda:0.0)()
@@ -2466,7 +2473,7 @@ class StatusPopover(QFrame):
     def _add_icon_button(self,layout,label,icon_file,callback):
         button=QPushButton(); button.setObjectName("actionButton")
         button.setCursor(Qt.CursorShape.PointingHandCursor)
-        button.setFixedHeight(74); button.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
+        button.setFixedHeight(88); button.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
         inner=QVBoxLayout(button); inner.setContentsMargins(3,3,3,3); inner.setSpacing(1)
         icon=QLabel(); icon.setFixedSize(36,30); icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         pix=QPixmap()
@@ -2481,8 +2488,8 @@ class StatusPopover(QFrame):
         if not pix.isNull():
             icon.setPixmap(pix.scaled(QSize(30,30),Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation))
         icon.setStyleSheet("background:transparent;")
-        text=QLabel(label.replace("\\n","\n")); text.setFixedHeight(30); text.setAlignment(Qt.AlignmentFlag.AlignCenter); text.setWordWrap(True)
-        text.setStyleSheet("color:#FFFFFF;font-size:10px;font-weight:700;background:transparent;")
+        text=QLabel(label.replace("\\n","\n")); text.setFixedHeight(42); text.setAlignment(Qt.AlignmentFlag.AlignCenter); text.setWordWrap(True)
+        text.setStyleSheet("color:#FFFFFF;font-size:15px;font-weight:800;background:transparent;")
         inner.addWidget(icon,0,Qt.AlignmentFlag.AlignHCenter)
         inner.addWidget(text,0)
         button.clicked.connect(callback); layout.addWidget(button,1)
