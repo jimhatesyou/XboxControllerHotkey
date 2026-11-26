@@ -11,6 +11,7 @@
 - Retains the previous executable backup until the updated application is confirmed to have started.
 - Uses the supplied high-resolution white circular icon for both the Record That shortcut card and Capture Settings button.
 - Replaces the battery placeholder glyph with the supplied white battery icon.
+- Clicking a controller-status notification dismisses it and opens the main app popover; the close button still dismisses without opening the popover.
 
 ## Included from V2.0.20
 
