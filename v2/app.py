@@ -22,7 +22,7 @@ from ctypes import wintypes
 from dataclasses import dataclass
 from typing import Optional
 
-from PySide6.QtCore import Qt, QTimer, QPoint, QRect, QSettings, QSize, QThread, Signal, QUrl, QPropertyAnimation
+from PySide6.QtCore import Qt, QTimer, QPoint, QRect, QSettings, QSize, QThread, Signal, QUrl, QPropertyAnimation, QEvent
 from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPen, QBrush, QPixmap, QPainterPath, QRegion, QDesktopServices, QMovie, QLinearGradient
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 from PySide6.QtWidgets import (
@@ -2641,12 +2641,13 @@ class XInputHotkeyWorker(threading.Thread):
 
 class ConnectionToast(QWidget):
     """Five-second, dismissible controller-status notification."""
-    def __init__(self, app, tray=None):
+    def __init__(self, app, tray=None, on_click=None):
         super().__init__(None, Qt.WindowType.ToolTip |
                          Qt.WindowType.FramelessWindowHint |
                          Qt.WindowType.WindowStaysOnTopHint)
         self.app = app
         self.tray = tray
+        self.on_click = on_click
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setFixedSize(360, 104)
@@ -2661,6 +2662,7 @@ class ConnectionToast(QWidget):
         shell = QFrame(self)
         shell.setObjectName("toastShell")
         shell.setGeometry(0, 0, 360, 104)
+        shell.installEventFilter(self)
         shell.setStyleSheet("""
             QFrame#toastShell {
                 background: #17191F;
@@ -2690,6 +2692,7 @@ class ConnectionToast(QWidget):
         self.icon_label.setFixedSize(42, 42)
         self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.icon_label.setStyleSheet("background: transparent; border: 0;")
+        self.icon_label.installEventFilter(self)
         layout.addWidget(self.icon_label, 0, Qt.AlignmentFlag.AlignVCenter)
 
         text_layout = QVBoxLayout()
@@ -2697,9 +2700,11 @@ class ConnectionToast(QWidget):
         text_layout.setSpacing(4)
         self.title_label = QLabel(APP_NAME)
         self.title_label.setObjectName("toastTitle")
+        self.title_label.installEventFilter(self)
         self.body_label = QLabel()
         self.body_label.setObjectName("toastBody")
         self.body_label.setWordWrap(True)
+        self.body_label.installEventFilter(self)
         text_layout.addWidget(self.title_label)
         text_layout.addWidget(self.body_label)
         layout.addLayout(text_layout, 1)
@@ -2719,6 +2724,16 @@ class ConnectionToast(QWidget):
         self.hide_timer = QTimer(self)
         self.hide_timer.setSingleShot(True)
         self.hide_timer.timeout.connect(self.fade_out)
+
+    def eventFilter(self, watched, event):
+        if watched is not self.close_button and event.type() == QEvent.Type.MouseButtonRelease:
+            if self.on_click is not None:
+                self.hide_timer.stop()
+                self.fade_animation.stop()
+                self.hide()
+                self.on_click()
+                return True
+        return super().eventFilter(watched, event)
 
     def fade_out(self):
         self.hide_timer.stop()
@@ -2797,7 +2812,7 @@ class TrayApplication:
                 self.monitor.shortcut_controls = [f"button:{b}" for b in DEFAULT_SHORTCUT]
         self.tray = QSystemTrayIcon(make_tray_icon(False), app)
         self.tray.setToolTip(self.tray_tooltip_text(None))
-        self.connection_toast = ConnectionToast(app, self.tray)
+        self.connection_toast = ConnectionToast(app, self.tray, self.open_popover_from_notification)
         self.input_activity = 0.0
         self.popover = StatusPopover(self.monitor, self.tray, self.settings)
         self.popover.activity_source = lambda: self.input_activity
@@ -2882,6 +2897,9 @@ class TrayApplication:
         if reason in (QSystemTrayIcon.ActivationReason.Trigger,
                       QSystemTrayIcon.ActivationReason.DoubleClick):
             self.toggle_popover()
+
+    def open_popover_from_notification(self):
+        self.popover.show_near_tray()
 
     def toggle_popover(self):
         if self.popover.isVisible():
