@@ -1475,7 +1475,7 @@ class ActivityGraph(QWidget):
     """Transparent, continuously scrolling controller-input waveform."""
     def __init__(self,parent=None):
         super().__init__(parent); self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground,True)
-        self.setFixedHeight(72); self.samples=[0.0]*180; self.activity_source=lambda:0.0
+        self.setFixedHeight(54); self.samples=[0.0]*180; self.activity_source=lambda:0.0
         self.timer=QTimer(self); self.timer.setInterval(33); self.timer.timeout.connect(self.sample); self.timer.start()
     def sample(self):
         try: value=max(0.0,min(1.0,float(self.activity_source())))
@@ -1572,7 +1572,7 @@ class StatusPopover(QFrame):
             QPushButton:pressed { background: #00B948; }
             QPushButton#actionButton {
                 background:#00D451; color:#FFFFFF; border:0; border-radius:9px;
-                padding:2px; min-height:82px; max-height:82px;
+                padding:0px; min-height:74px; max-height:74px;
                 font-size:11px; font-weight:700;
             }
             QPushButton#actionButton:hover { background:#12E56A; }
@@ -1658,7 +1658,7 @@ class StatusPopover(QFrame):
 
         self.controller_icon=QLabel()
         self.controller_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.controller_icon.setFixedHeight(82)
+        self.controller_icon.setFixedHeight(72)
         controller_pix=QPixmap(resource_path(os.path.join("assets","controller-icon.png")))
         if not controller_pix.isNull():
             self.controller_icon.setPixmap(controller_pix.scaled(
@@ -1703,7 +1703,7 @@ class StatusPopover(QFrame):
         action_row=QHBoxLayout(); action_row.setSpacing(7)
         self._add_icon_button(action_row,"Configure\\nshortcut","configure-shortcut.png.b64",self.show_shortcut_page)
         self._add_icon_button(action_row,"Configure\\ncontroller","xbox-icon.png",self.show_controller_page)
-        self._add_icon_button(action_row,"Capture\\nsettings","capture-settings-hires.png.b64",open_capture_settings)
+        self._add_icon_button(action_row,"Capture\\nsettings","capture-settings.svg",open_capture_settings)
         root.addLayout(action_row)
         secondary_row=QHBoxLayout(); secondary_row.setSpacing(8)
         self.clips_button=QPushButton(); self.clips_button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -1724,17 +1724,17 @@ class StatusPopover(QFrame):
         powered.setObjectName("subtitle")
         footer.addWidget(powered,alignment=Qt.AlignmentFlag.AlignVCenter)
         logo=QLabel()
-        logo.setFixedSize(56,56)
+        logo.setFixedSize(48,48)
         logo.setAlignment(Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter)
         self.powered_movie=QMovie(resource_path(os.path.join("assets","powered-by-logo.gif")))
         if self.powered_movie.isValid():
-            self.powered_movie.setScaledSize(QSize(56,56))
+            self.powered_movie.setScaledSize(QSize(48,48))
             logo.setMovie(self.powered_movie)
             self.powered_movie.start()
         else:
             logo_pix=QPixmap(resource_path(os.path.join("assets","powered-by-logo.png")))
             if not logo_pix.isNull():
-                logo.setPixmap(logo_pix.scaled(QSize(56,56),Qt.AspectRatioMode.KeepAspectRatio,
+                logo.setPixmap(logo_pix.scaled(QSize(48,48),Qt.AspectRatioMode.KeepAspectRatio,
                                                Qt.TransformationMode.SmoothTransformation))
         footer.addWidget(logo,alignment=Qt.AlignmentFlag.AlignBottom)
         root.addLayout(footer)
@@ -2382,9 +2382,9 @@ class StatusPopover(QFrame):
     def _add_icon_button(self,layout,label,icon_file,callback):
         button=QPushButton(); button.setObjectName("actionButton")
         button.setCursor(Qt.CursorShape.PointingHandCursor)
-        button.setFixedHeight(82); button.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
-        inner=QVBoxLayout(button); inner.setContentsMargins(3,4,3,4); inner.setSpacing(2)
-        icon=QLabel(); icon.setFixedHeight(34); icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        button.setFixedHeight(74); button.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
+        inner=QVBoxLayout(button); inner.setContentsMargins(3,3,3,3); inner.setSpacing(1)
+        icon=QLabel(); icon.setFixedSize(36,30); icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         pix=QPixmap()
         try:
             if icon_file.endswith(".b64"):
@@ -2397,9 +2397,10 @@ class StatusPopover(QFrame):
         if not pix.isNull():
             icon.setPixmap(pix.scaled(QSize(30,30),Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation))
         icon.setStyleSheet("background:transparent;")
-        text=QLabel(label.replace("\\n","\n")); text.setAlignment(Qt.AlignmentFlag.AlignCenter); text.setWordWrap(True)
-        text.setStyleSheet("color:#FFFFFF;font-size:11px;font-weight:700;background:transparent;")
-        inner.addWidget(icon,1); inner.addWidget(text)
+        text=QLabel(label.replace("\\n","\n")); text.setFixedHeight(30); text.setAlignment(Qt.AlignmentFlag.AlignCenter); text.setWordWrap(True)
+        text.setStyleSheet("color:#FFFFFF;font-size:10px;font-weight:700;background:transparent;")
+        inner.addWidget(icon,0,Qt.AlignmentFlag.AlignHCenter)
+        inner.addWidget(text,0)
         button.clicked.connect(callback); layout.addWidget(button,1)
         return button
 
