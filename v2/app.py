@@ -2732,7 +2732,7 @@ class TrayApplication:
         self.clip_count = int(self.settings.value("lifetimeClipCount",0,type=int))
         self.pending_capture_triggers = [float(x) for x in (self.settings.value("pendingCaptureTriggers",[]) or [])]
         self.capture_trigger_lock = threading.Lock()
-        self.known_capture_files = {os.path.normcase(os.path.abspath(x[0])) for x in self._capture_files()}
+        self.known_capture_files = {os.path.normcase(os.path.abspath(path)) for path,created,size in self._capture_files() if not any(-3 <= created-trigger <= 180 for trigger in self.pending_capture_triggers)}
         self.capture_file_states = {}
         self._counted_capture_files = set(self.settings.value("countedCaptureFiles",[]) or [])
         self.popover.clip_count_value.setText(str(self.clip_count))
