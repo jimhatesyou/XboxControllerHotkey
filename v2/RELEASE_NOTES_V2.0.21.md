@@ -9,6 +9,8 @@
 - Restores the previous executable if the fallback replacement fails.
 - Removes stale `.new` staging files on failure and records detailed updater activity in the temporary update log.
 - Retains the previous executable backup until the updated application is confirmed to have started.
+- Uses the supplied high-resolution white circular icon for both the Record That shortcut card and Capture Settings button.
+- Replaces the battery placeholder glyph with the supplied white battery icon.
 
 ## Included from V2.0.20
 
