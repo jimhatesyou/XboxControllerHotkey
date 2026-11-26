@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from PySide6.QtCore import Qt, QTimer, QPoint, QRect, QSettings, QSize, QThread, Signal, QUrl, QPropertyAnimation
-from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPen, QBrush, QPixmap, QPainterPath, QRegion, QDesktopServices, QMovie
+from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPen, QBrush, QPixmap, QPainterPath, QRegion, QDesktopServices, QMovie, QLinearGradient
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 from PySide6.QtWidgets import (
     QApplication, QDialog, QFrame, QHBoxLayout, QLabel, QMenu, QPushButton, QGraphicsOpacityEffect,
@@ -51,7 +51,7 @@ except Exception:
 
 
 APP_NAME = "XboxControllerHotkey"
-APP_VERSION = "2.0.18"
+APP_VERSION = "2.0.19"
 ACCESSORIES_AUMID = r"Microsoft.XboxDevices_8wekyb3d8bbwe!App"
 ACCESSORIES_STORE_URI = "ms-windows-store://pdp/?productid=9NBLGGH30XJ3"
 CAPTURE_SETTINGS_URI = "ms-settings:gaming-gamedvr"
@@ -1454,6 +1454,45 @@ class ControllerSelectionDialog(QDialog):
         self.accept()
 
 
+class ActivityGraph(QWidget):
+    """Transparent, continuously scrolling controller-input waveform."""
+    def __init__(self,parent=None):
+        super().__init__(parent); self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground,True)
+        self.setFixedHeight(72); self.samples=[0.0]*180; self.activity_source=lambda:0.0
+        self.timer=QTimer(self); self.timer.setInterval(33); self.timer.timeout.connect(self.sample); self.timer.start()
+    def sample(self):
+        try: value=max(0.0,min(1.0,float(self.activity_source())))
+        except Exception: value=0.0
+        self.samples.pop(0); self.samples.append(value); self.update()
+    def paintEvent(self,event):
+        painter=QPainter(self); painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w=max(1,self.width()); h=self.height(); baseline=h-20; path=QPainterPath()
+        for i,value in enumerate(self.samples):
+            x=(i/(len(self.samples)-1))*w; y=baseline-value*(h-29)
+            if i==0: path.moveTo(x,y)
+            else: path.lineTo(x,y)
+        area=QPainterPath(path); area.lineTo(w,baseline); area.lineTo(0,baseline); area.closeSubpath()
+        alpha=int(26+76*max(self.samples or [0.0]))
+        gradient=QLinearGradient(0,0,0,h); gradient.setColorAt(0,QColor(0,212,81,alpha)); gradient.setColorAt(1,QColor(0,212,81,0))
+        painter.fillPath(area,gradient)
+        painter.setPen(QPen(QColor("#00D451"),2.0,Qt.PenStyle.SolidLine,Qt.PenCapStyle.RoundCap,Qt.PenJoinStyle.RoundJoin))
+        painter.drawPath(path); painter.end()
+
+
+def capture_folder_path():
+    """Resolve the user's configured Windows Gaming Captures folder."""
+    fallback=os.path.join(os.path.expanduser("~"),"Videos","Captures")
+    if os.name!="nt": return fallback
+    try:
+        import winreg
+        key_path=r"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders"
+        value_name="{EDC0FE71-98D8-4F4A-B920-C8DC133CB165}"
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,key_path) as key:
+            value,_=winreg.QueryValueEx(key,value_name)
+        return os.path.expandvars(str(value))
+    except Exception: return fallback
+
+
 class StatusPopover(QFrame):
     def __init__(self, monitor: ControllerMonitor, tray: QSystemTrayIcon, settings: QSettings, parent=None):
         super().__init__(parent, Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
@@ -1461,8 +1500,7 @@ class StatusPopover(QFrame):
         self.tray = tray
         self.settings = settings
         self.setObjectName("popover")
-        self.setFixedWidth(370)
-        self.setMinimumHeight(410)
+        self.setFixedSize(430,650)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._build_ui()
@@ -1530,10 +1568,10 @@ class StatusPopover(QFrame):
         self.home_page=QWidget()
         root=QVBoxLayout(self.home_page)
         root.setContentsMargins(0,0,0,0)
-        root.setSpacing(7)
+        root.setSpacing(6)
 
         header=QHBoxLayout()
-        header.setContentsMargins(0,-7,-16,0)
+        header.setContentsMargins(0,-7,0,0)
         brand_col=QVBoxLayout()
         brand_col.setSpacing(1)
         brand=QLabel(APP_NAME)
@@ -1559,7 +1597,10 @@ class StatusPopover(QFrame):
             "QPushButton:hover{color:#00D451;background:transparent;}"
         )
         close_button.clicked.connect(self.hide)
-        header.addWidget(close_button,alignment=Qt.AlignmentFlag.AlignTop)
+        self.close_button=close_button
+        close_button.setParent(self)
+        close_button.setGeometry(self.width()-40,2,30,30)
+        close_button.raise_()
         root.addLayout(header)
 
         # Connection state is intentionally shown in the lower-left footer,
@@ -1580,7 +1621,7 @@ class StatusPopover(QFrame):
 
         self.controller_icon=QLabel()
         self.controller_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.controller_icon.setFixedHeight(96)
+        self.controller_icon.setFixedHeight(82)
         controller_pix=QPixmap(resource_path(os.path.join("assets","controller-icon.png")))
         if not controller_pix.isNull():
             self.controller_icon.setPixmap(controller_pix.scaled(
@@ -1605,59 +1646,38 @@ class StatusPopover(QFrame):
         identity_layout.addWidget(self.controller_subtitle)
         root.addLayout(identity_layout)
 
-        details=QFrame()
-        details.setObjectName("details")
-        details_layout=QVBoxLayout(details)
-        details_layout.setContentsMargins(13,10,13,10)
-        details_layout.setSpacing(9)
-
-        self.battery_value=self._detail_row(details_layout,"Battery","—")
-
-        hotkey_row=QHBoxLayout()
-        hotkey_label=QLabel("Record That shortcut")
-        hotkey_label.setObjectName("section")
-        self.hotkey_value=QLabel(ShortcutDialog.shortcut_text(self.monitor.shortcut_controls))
-        self.hotkey_value.setObjectName("value")
-        self.hotkey_value.setAlignment(Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignVCenter)
-        hotkey_row.addWidget(hotkey_label)
-        hotkey_row.addStretch()
-        hotkey_row.addWidget(self.hotkey_value)
-        details_layout.addLayout(hotkey_row)
-        root.addWidget(details)
-
-        action_row=QHBoxLayout()
-        action_row.setSpacing(8)
-        configure_hotkey=QPushButton("Configure shortcut")
-        configure_hotkey.clicked.connect(self.show_shortcut_page)
-        configure_hotkey.setFixedSize(165,42)
-        configure_hotkey.setSizePolicy(QSizePolicy.Policy.Fixed,QSizePolicy.Policy.Fixed)
-        configure_controller=QPushButton("Configure controller  ↗")
-        configure_controller.clicked.connect(self.show_controller_page)
-        configure_controller.setFixedSize(165,42)
-        configure_controller.setSizePolicy(QSizePolicy.Policy.Fixed,QSizePolicy.Policy.Fixed)
-        action_row.addWidget(configure_hotkey)
-        action_row.addWidget(configure_controller)
-        action_row.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        info_row=QHBoxLayout(); info_row.setSpacing(8)
+        battery_card=QFrame(); battery_card.setObjectName("details")
+        battery_lay=QHBoxLayout(battery_card); battery_lay.setContentsMargins(10,7,8,7); battery_lay.setSpacing(7)
+        battery_icon=QLabel("▰"); battery_icon.setStyleSheet("font-size:22px;color:#FFFFFF;"); battery_lay.addWidget(battery_icon)
+        battery_text=QVBoxLayout(); battery_text.setSpacing(1)
+        battery_label=QLabel("Battery"); battery_label.setObjectName("section")
+        self.battery_value=QLabel("—"); self.battery_value.setObjectName("value")
+        battery_text.addWidget(battery_label); battery_text.addWidget(self.battery_value); battery_lay.addLayout(battery_text,1)
+        info_row.addWidget(battery_card,1)
+        shortcut_card=QFrame(); shortcut_card.setObjectName("details")
+        shortcut_lay=QHBoxLayout(shortcut_card); shortcut_lay.setContentsMargins(10,7,8,7); shortcut_lay.setSpacing(7)
+        shortcut_icon=QLabel("▣"); shortcut_icon.setStyleSheet("font-size:22px;color:#FFFFFF;"); shortcut_lay.addWidget(shortcut_icon)
+        shortcut_text=QVBoxLayout(); shortcut_text.setSpacing(1)
+        shortcut_label=QLabel("Record That shortcut"); shortcut_label.setObjectName("section")
+        self.hotkey_value=QLabel(ShortcutDialog.shortcut_text(self.monitor.shortcut_controls)); self.hotkey_value.setObjectName("value")
+        shortcut_text.addWidget(shortcut_label); shortcut_text.addWidget(self.hotkey_value); shortcut_lay.addLayout(shortcut_text,1)
+        info_row.addWidget(shortcut_card,1); root.addLayout(info_row)
+        action_row=QHBoxLayout(); action_row.setSpacing(7)
+        self._add_icon_button(action_row,"Configure\\nshortcut","ABXY",self.show_shortcut_page)
+        self._add_icon_button(action_row,"Configure\\ncontroller","X",self.show_controller_page)
+        self._add_icon_button(action_row,"Capture\\nsettings","◎",open_capture_settings)
         root.addLayout(action_row)
-
-        secondary_row=QHBoxLayout()
-        secondary_row.setSpacing(8)
-        capture_settings=QPushButton("Capture settings  ↗")
-        capture_settings.setObjectName("secondary")
-        capture_settings.clicked.connect(open_capture_settings)
-        capture_settings.setFixedSize(165,42)
-        capture_settings.setSizePolicy(QSizePolicy.Policy.Fixed,QSizePolicy.Policy.Fixed)
-        about_button=QPushButton("About")
-        about_button.setObjectName("secondary")
-        about_button.clicked.connect(self.open_about)
-        about_button.setFixedSize(165,42)
-        about_button.setSizePolicy(QSizePolicy.Policy.Fixed,QSizePolicy.Policy.Fixed)
-        secondary_row.addWidget(capture_settings)
-        secondary_row.addWidget(about_button)
-        secondary_row.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        root.addLayout(secondary_row)
-
-        root.addSpacing(0)
+        secondary_row=QHBoxLayout(); secondary_row.setSpacing(8)
+        self.clips_button=QPushButton(); self.clips_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.clips_button.setStyleSheet("QPushButton{background:rgba(38,45,56,225);color:#FFFFFF;border:2px solid #00D451;border-radius:12px;padding:5px;min-height:48px;max-height:48px;} QPushButton:hover{background:#25342D;}")
+        clips_lay=QHBoxLayout(self.clips_button); clips_lay.setContentsMargins(8,2,8,2); clips_lay.setSpacing(7)
+        clips_icon=QLabel("▣"); clips_icon.setStyleSheet("font-size:22px;color:#FFFFFF;"); clips_lay.addWidget(clips_icon)
+        clips_label=QLabel("Clips Captured"); clips_label.setStyleSheet("font-size:12px;color:#E8EDF4;"); clips_lay.addWidget(clips_label); clips_lay.addStretch()
+        self.clip_count_value=QLabel("0"); self.clip_count_value.setStyleSheet("font-size:22px;font-weight:800;color:#FFFFFF;"); clips_lay.addWidget(self.clip_count_value)
+        self.clips_button.clicked.connect(self.open_captures_folder); secondary_row.addWidget(self.clips_button,1)
+        about_button=QPushButton("ⓘ   About"); about_button.setObjectName("secondary"); about_button.clicked.connect(self.open_about)
+        secondary_row.addWidget(about_button,1); root.addLayout(secondary_row)
         footer=QHBoxLayout()
         footer.setSpacing(6)
         footer.setContentsMargins(0, 0, 0, 0)
@@ -1681,12 +1701,15 @@ class StatusPopover(QFrame):
                                                Qt.TransformationMode.SmoothTransformation))
         footer.addWidget(logo,alignment=Qt.AlignmentFlag.AlignBottom)
         root.addLayout(footer)
+        self.activity_graph=ActivityGraph(self.home_page)
+        self.activity_graph.activity_source=lambda: getattr(self,"activity_source",lambda:0.0)()
+        root.addWidget(self.activity_graph)
         self.pages.addWidget(self.home_page)
 
         # ---------------- ABOUT ----------------
         self.about_page=QWidget()
         about_lay=QVBoxLayout(self.about_page)
-        about_lay.setContentsMargins(0,0,0,22)
+        about_lay.setContentsMargins(0,0,0,0)
         about_lay.setSpacing(10)
         about_header=QHBoxLayout()
         about_back=QPushButton("Back")
@@ -1775,7 +1798,7 @@ class StatusPopover(QFrame):
         # ---------------- FAQ ----------------
         self.faq_page=QWidget()
         faq_lay=QVBoxLayout(self.faq_page)
-        faq_lay.setContentsMargins(0,0,0,22)
+        faq_lay.setContentsMargins(0,0,0,0)
         faq_lay.setSpacing(9)
         faq_header=QHBoxLayout()
         faq_back=QPushButton("Back")
@@ -1861,7 +1884,7 @@ class StatusPopover(QFrame):
         # ---------------- CONFIGURE SHORTCUT (IN-POPOVER PAGE) ----------------
         self.shortcut_page=QWidget()
         shortcut_lay=QVBoxLayout(self.shortcut_page)
-        shortcut_lay.setContentsMargins(0,0,0,22)
+        shortcut_lay.setContentsMargins(0,0,0,0)
         shortcut_lay.setSpacing(10)
         shortcut_header=QHBoxLayout()
         shortcut_back=QPushButton("Back")
@@ -1928,7 +1951,7 @@ class StatusPopover(QFrame):
         # ---------------- CONFIGURE CONTROLLER (IN-POPOVER PAGE) ----------------
         self.controller_page=QWidget()
         controller_lay=QVBoxLayout(self.controller_page)
-        controller_lay.setContentsMargins(0,0,0,22)
+        controller_lay.setContentsMargins(0,0,0,0)
         controller_lay.setSpacing(10)
         controller_header=QHBoxLayout()
         controller_back=QPushButton("Back")
@@ -1987,6 +2010,7 @@ class StatusPopover(QFrame):
         self.update_checked=False
 
         self.pages.setCurrentWidget(self.home_page)
+        self.pages.setFixedSize(398,632)
 
         # Update checks run off the UI thread with bounded network timeouts.
         self.update_worker=None
@@ -2009,7 +2033,9 @@ class StatusPopover(QFrame):
     def _show_page(self,page):
         self.pages.setCurrentWidget(page)
         self.pages.setVisible(True)
-        self.adjustSize()
+        self.pages.setFixedSize(398,632)
+        if hasattr(self,"activity_graph"):
+            self.activity_graph.setVisible(page is self.home_page)
         if self.isVisible():
             self.raise_()
             self.activateWindow()
@@ -2308,6 +2334,27 @@ class StatusPopover(QFrame):
 
     def open_controller_selection(self):
         self._open_page_after_tray_menu(self.show_controller_page)
+
+    def _add_icon_button(self,layout,label,icon_text,callback):
+        button=QPushButton(); button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.setFixedHeight(88); button.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
+        inner=QVBoxLayout(button); inner.setContentsMargins(2,6,2,5); inner.setSpacing(2)
+        icon=QLabel(icon_text); icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon.setStyleSheet("color:#FFFFFF;font-size:23px;font-weight:800;background:transparent;")
+        text=QLabel(label); text.setAlignment(Qt.AlignmentFlag.AlignCenter); text.setWordWrap(True)
+        text.setStyleSheet("color:#FFFFFF;font-size:12px;font-weight:700;background:transparent;")
+        inner.addWidget(icon,1); inner.addWidget(text)
+        button.clicked.connect(callback); layout.addWidget(button,1)
+        return button
+
+    def open_captures_folder(self):
+        folder=capture_folder_path()
+        try:
+            os.makedirs(folder,exist_ok=True)
+            if not QDesktopServices.openUrl(QUrl.fromLocalFile(folder)):
+                raise OSError("Windows could not open the Captures folder.")
+        except Exception as exc:
+            QMessageBox.warning(self,APP_NAME,f"Could not open the configured Captures folder.\\n\\n{exc}")
 
     def _detail_row(self, layout, label, value):
         row = QHBoxLayout()
