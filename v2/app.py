@@ -577,9 +577,11 @@ class ControllerMonitor:
             state=XINPUT_STATE()
             if self._xinput_get_state(user_index,ctypes.byref(state))!=0: continue
             pad=state.Gamepad
-            values=[abs(int(pad.sThumbLX))/32767.0,abs(int(pad.sThumbLY))/32767.0,
-                    abs(int(pad.sThumbRX))/32767.0,abs(int(pad.sThumbRY))/32767.0,
-                    int(pad.bLeftTrigger)/255.0,int(pad.bRightTrigger)/255.0]
+            axes=[abs(int(pad.sThumbLX))/32767.0,abs(int(pad.sThumbLY))/32767.0,
+                  abs(int(pad.sThumbRX))/32767.0,abs(int(pad.sThumbRY))/32767.0]
+            triggers=[int(pad.bLeftTrigger)/255.0,int(pad.bRightTrigger)/255.0]
+            values=[max(0.0,(v-0.12)/0.88) for v in axes]
+            values.extend(max(0.0,(v-0.03)/0.97) for v in triggers)
             if int(pad.wButtons): values.append(0.72)
             return max(values)
         return 0.0
@@ -2919,7 +2921,8 @@ class TrayApplication:
             try:
                 for joystick in self.monitor.joysticks:
                     for axis_index in range(joystick.get_numaxes()):
-                        level=max(level,min(1.0,abs(float(joystick.get_axis(axis_index)))))
+                        axis_value=abs(float(joystick.get_axis(axis_index)))
+                        level=max(level,max(0.0,min(1.0,(axis_value-0.12)/0.88)))
             except Exception:
                 pass
             self.set_input_activity(level)
