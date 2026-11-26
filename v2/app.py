@@ -2731,6 +2731,7 @@ class TrayApplication:
         self.popover.activity_source = lambda: self.input_activity
         self.clip_count = int(self.settings.value("lifetimeClipCount",0,type=int))
         self.pending_capture_triggers = [float(x) for x in (self.settings.value("pendingCaptureTriggers",[]) or [])]
+        self.capture_trigger_lock = threading.Lock()
         self.known_capture_files = {os.path.normcase(os.path.abspath(x[0])) for x in self._capture_files()}
         self.capture_file_states = {}
         self._counted_capture_files = set(self.settings.value("countedCaptureFiles",[]) or [])
@@ -2944,18 +2945,22 @@ class TrayApplication:
         return files
 
     def note_record_that_trigger(self):
+        # Called by the 125 Hz input worker; only append under a lock here.
+        # QSettings writes are kept on the Qt/UI thread in scan_capture_files().
         now=time.time()
-        self.pending_capture_triggers=[t for t in self.pending_capture_triggers if now-t<180]
-        self.pending_capture_triggers.append(now)
-        self.settings.setValue("pendingCaptureTriggers",self.pending_capture_triggers)
+        with self.capture_trigger_lock:
+            self.pending_capture_triggers=[t for t in self.pending_capture_triggers if now-t<180]
+            self.pending_capture_triggers.append(now)
 
     def scan_capture_files(self):
         now=time.time()
-        self.pending_capture_triggers=[t for t in self.pending_capture_triggers if now-t<180]
+        with self.capture_trigger_lock:
+            self.pending_capture_triggers=[t for t in self.pending_capture_triggers if now-t<180]
+            pending=list(self.pending_capture_triggers)
         for path,created,size in self._capture_files():
             normalized=os.path.normcase(os.path.abspath(path))
             if normalized in self.known_capture_files or normalized in self._counted_capture_files: continue
-            matching=next((t for t in self.pending_capture_triggers if -3<=created-t<=180),None)
+            matching=next((t for t in pending if -3<=created-t<=180),None)
             if matching is None:
                 self.known_capture_files.add(normalized)
                 continue
@@ -2967,12 +2972,16 @@ class TrayApplication:
                 self.settings.setValue("lifetimeClipCount",self.clip_count)
                 self._counted_capture_files.add(normalized)
                 self.settings.setValue("countedCaptureFiles",list(self._counted_capture_files)[-5000:])
-                self.pending_capture_triggers.remove(matching)
-                self.settings.setValue("pendingCaptureTriggers",self.pending_capture_triggers)
+                with self.capture_trigger_lock:
+                    if matching in self.pending_capture_triggers:
+                        self.pending_capture_triggers.remove(matching)
+                    pending=list(self.pending_capture_triggers)
                 self.popover.clip_count_value.setText(str(self.clip_count))
                 self.known_capture_files.add(normalized)
                 self.capture_file_states.pop(normalized,None)
-        self.settings.setValue("pendingCaptureTriggers",self.pending_capture_triggers)
+        with self.capture_trigger_lock:
+            pending=list(self.pending_capture_triggers)
+        self.settings.setValue("pendingCaptureTriggers",pending)
 
     def _write_input_log(self, message):
         try:
