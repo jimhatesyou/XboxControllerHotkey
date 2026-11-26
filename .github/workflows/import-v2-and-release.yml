@@ -4,15 +4,12 @@ on:
   push:
     branches:
       - main
-    paths:
-      - "v2/**"
-      - ".github/workflows/import-v2-and-release.yml"
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Release tag (manual release)"
+        description: "Release tag (manual runs only)"
         required: true
-        default: "v2.0.22"
+        default: "v2.0.23"
         type: string
 
 permissions:
@@ -22,10 +19,10 @@ jobs:
   build-release:
     runs-on: windows-latest
     steps:
-      - name: Check out repository
+      - name: Check out triggering commit
         uses: actions/checkout@v6
         with:
-          ref: main
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Set up Python
@@ -34,37 +31,26 @@ jobs:
           python-version: "3.11"
           architecture: "x64"
 
-      - name: Determine version and release behavior
-        id: meta
+      - name: Set automatic release version
+        id: version
         shell: pwsh
         run: |
-          $app = Get-Content "v2/app.py" -Raw
-          if ($app -notmatch 'APP_VERSION\s*=\s*"([^"]+)"') {
-            throw "Could not read APP_VERSION from v2/app.py"
-          }
-          $version = $Matches[1]
-          $notes = "v2/RELEASE_NOTES_V$version.md"
-          $versionChanged = $false
-          if (" ${{ github.event_name }} " -eq " push ") {
-            $previous = git show "HEAD^:v2/app.py" 2>$null
-            if ($LASTEXITCODE -eq 0 -and $previous -match 'APP_VERSION\s*=\s*"([^"]+)"') {
-              $versionChanged = ($Matches[1] -ne $version)
-            }
-            if (-not (Test-Path $notes)) {
-              Write-Host "No matching release notes file at $notes; this push will produce a build artifact only."
-              $versionChanged = $false
-            }
-            $tag = "v$version"
-          } else {
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
             $tag = "${{ inputs.release_tag }}"
+            $version = $tag.TrimStart('v','V')
+          } else {
+            # Four-part numeric versions sort correctly in the app updater.
+            # The workflow run number makes every push produce a unique tag.
+            $version = "2.0.23.${{ github.run_number }}"
+            $tag = "v$version"
           }
-          "version=$version" >> $env:GITHUB_OUTPUT
-          "release_tag=$tag" >> $env:GITHUB_OUTPUT
-          "publish_release=$versionChanged" >> $env:GITHUB_OUTPUT
-          "notes_file=$notes" >> $env:GITHUB_OUTPUT
-          Write-Host "Application version: $version"
-          Write-Host "Release tag: $tag"
-          Write-Host "Automatic release enabled: $versionChanged"
+          $app = "v2/app.py"
+          $source = Get-Content -LiteralPath $app -Raw
+          $source = [regex]::Replace($source, '(?m)^APP_VERSION = "[^"]+"', ('APP_VERSION = "' + $version + '"'), 1)
+          Set-Content -LiteralPath $app -Value $source -Encoding utf8
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "Building release $tag from ${{ github.sha }}"
 
       - name: Install dependencies
         working-directory: v2
@@ -86,26 +72,14 @@ jobs:
           $hash = (Get-FileHash "dist/XboxControllerHotkey.exe" -Algorithm SHA256).Hash
           "$hash  XboxControllerHotkey.exe" | Out-File -Encoding ascii "dist/XboxControllerHotkey.exe.sha256"
 
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: XboxControllerHotkey-${{ steps.meta.outputs.version }}-${{ github.sha }}
-          path: |
-            v2/dist/XboxControllerHotkey.exe
-            v2/dist/XboxControllerHotkey.exe.sha256
-          if-no-files-found: error
-          retention-days: 30
-
       - name: Publish GitHub release
-        if: github.event_name == 'workflow_dispatch' || steps.meta.outputs.publish_release == 'true'
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ steps.meta.outputs.release_tag }}
-          target_commitish: main
-          name: XboxControllerHotkey ${{ steps.meta.outputs.release_tag }}
-          body_path: ${{ steps.meta.outputs.notes_file }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: XboxControllerHotkey v${{ steps.version.outputs.version }}
           files: |
             v2/dist/XboxControllerHotkey.exe
             v2/dist/XboxControllerHotkey.exe.sha256
-          generate_release_notes: false
+          generate_release_notes: true
           fail_on_unmatched_files: true
