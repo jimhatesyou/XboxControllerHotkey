@@ -52,7 +52,7 @@ except Exception:
 
 
 APP_NAME = "XboxControllerHotkey"
-APP_VERSION = "2.0.19"
+APP_VERSION = "2.0.20"
 ACCESSORIES_AUMID = r"Microsoft.XboxDevices_8wekyb3d8bbwe!App"
 ACCESSORIES_STORE_URI = "ms-windows-store://pdp/?productid=9NBLGGH30XJ3"
 CAPTURE_SETTINGS_URI = "ms-settings:gaming-gamedvr"
@@ -1570,6 +1570,13 @@ class StatusPopover(QFrame):
             }
             QPushButton:hover { background: #12E56A; }
             QPushButton:pressed { background: #00B948; }
+            QPushButton#actionButton {
+                background:#00D451; color:#FFFFFF; border:0; border-radius:9px;
+                padding:2px; min-height:82px; max-height:82px;
+                font-size:11px; font-weight:700;
+            }
+            QPushButton#actionButton:hover { background:#12E56A; }
+            QPushButton#actionButton:pressed { background:#00B948; }
             QPushButton#secondary {
                 background: rgba(38,45,56,225); color: #E8EDF4;
                 border: 1px solid rgba(130,140,155,65);
@@ -1696,7 +1703,7 @@ class StatusPopover(QFrame):
         action_row=QHBoxLayout(); action_row.setSpacing(7)
         self._add_icon_button(action_row,"Configure\\nshortcut","configure-shortcut.png.b64",self.show_shortcut_page)
         self._add_icon_button(action_row,"Configure\\ncontroller","xbox-icon.png",self.show_controller_page)
-        self._add_icon_button(action_row,"Capture\\nsettings","capture-settings.png.b64",open_capture_settings)
+        self._add_icon_button(action_row,"Capture\\nsettings","capture-settings-hires.png.b64",open_capture_settings)
         root.addLayout(action_row)
         secondary_row=QHBoxLayout(); secondary_row.setSpacing(8)
         self.clips_button=QPushButton(); self.clips_button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -2373,10 +2380,11 @@ class StatusPopover(QFrame):
         self._open_page_after_tray_menu(self.show_controller_page)
 
     def _add_icon_button(self,layout,label,icon_file,callback):
-        button=QPushButton(); button.setCursor(Qt.CursorShape.PointingHandCursor)
-        button.setFixedHeight(88); button.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
-        inner=QVBoxLayout(button); inner.setContentsMargins(2,5,2,4); inner.setSpacing(1)
-        icon=QLabel(); icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        button=QPushButton(); button.setObjectName("actionButton")
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.setFixedHeight(82); button.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
+        inner=QVBoxLayout(button); inner.setContentsMargins(3,4,3,4); inner.setSpacing(2)
+        icon=QLabel(); icon.setFixedHeight(34); icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         pix=QPixmap()
         try:
             if icon_file.endswith(".b64"):
@@ -2387,10 +2395,10 @@ class StatusPopover(QFrame):
         except Exception:
             pass
         if not pix.isNull():
-            icon.setPixmap(pix.scaled(QSize(34,34),Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation))
+            icon.setPixmap(pix.scaled(QSize(30,30),Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation))
         icon.setStyleSheet("background:transparent;")
         text=QLabel(label.replace("\\n","\n")); text.setAlignment(Qt.AlignmentFlag.AlignCenter); text.setWordWrap(True)
-        text.setStyleSheet("color:#FFFFFF;font-size:12px;font-weight:700;background:transparent;")
+        text.setStyleSheet("color:#FFFFFF;font-size:11px;font-weight:700;background:transparent;")
         inner.addWidget(icon,1); inner.addWidget(text)
         button.clicked.connect(callback); layout.addWidget(button,1)
         return button
