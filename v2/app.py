@@ -2072,7 +2072,7 @@ class StatusPopover(QFrame):
         self.pages.setVisible(True)
         self.pages.setFixedSize(398,632)
         if hasattr(self,"activity_graph"):
-            self.activity_graph.setVisible(page is self.home_page)
+            self.activity_graph.setVisible(self.controller_connected and page is self.home_page)
         if self.isVisible():
             self.raise_()
             self.activateWindow()
@@ -2428,6 +2428,9 @@ class StatusPopover(QFrame):
 
     def refresh(self):
         info = self.monitor.active
+        self.controller_connected = info is not None
+        if hasattr(self, "activity_graph"):
+            self.activity_graph.setVisible(self.controller_connected and self.pages.currentWidget() is self.home_page)
         if info:
             family = controller_family(info.name)
             family_asset = os.path.join("assets", f"{family}-controller.png")
