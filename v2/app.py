@@ -1686,7 +1686,16 @@ class StatusPopover(QFrame):
         info_row=QHBoxLayout(); info_row.setSpacing(8)
         battery_card=QFrame(); battery_card.setObjectName("details")
         battery_lay=QHBoxLayout(battery_card); battery_lay.setContentsMargins(10,7,8,7); battery_lay.setSpacing(7)
-        battery_icon=QLabel("▰"); battery_icon.setStyleSheet("font-size:22px;color:#FFFFFF;"); battery_lay.addWidget(battery_icon)
+        battery_icon=QLabel(); battery_icon.setFixedSize(22,26); battery_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        battery_pix=QPixmap()
+        try:
+            with open(resource_path(os.path.join("assets","battery-icon.png.b64")),"r",encoding="ascii") as source:
+                battery_pix.loadFromData(base64.b64decode(source.read().strip()))
+        except Exception:
+            pass
+        if not battery_pix.isNull():
+            battery_icon.setPixmap(battery_pix.scaled(QSize(20,26),Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation))
+        battery_icon.setStyleSheet("background:transparent;"); battery_lay.addWidget(battery_icon)
         battery_text=QVBoxLayout(); battery_text.setSpacing(1)
         battery_label=QLabel("Battery"); battery_label.setObjectName("section")
         self.battery_value=QLabel("—"); self.battery_value.setObjectName("value")
@@ -1694,7 +1703,16 @@ class StatusPopover(QFrame):
         info_row.addWidget(battery_card,1)
         shortcut_card=QFrame(); shortcut_card.setObjectName("details")
         shortcut_lay=QHBoxLayout(shortcut_card); shortcut_lay.setContentsMargins(10,7,8,7); shortcut_lay.setSpacing(7)
-        shortcut_icon=QLabel("▣"); shortcut_icon.setStyleSheet("font-size:22px;color:#FFFFFF;"); shortcut_lay.addWidget(shortcut_icon)
+        shortcut_icon=QLabel(); shortcut_icon.setFixedSize(22,22); shortcut_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        shortcut_pix=QPixmap()
+        try:
+            with open(resource_path(os.path.join("assets","record-capture-icon.png.b64")),"r",encoding="ascii") as source:
+                shortcut_pix.loadFromData(base64.b64decode(source.read().strip()))
+        except Exception:
+            pass
+        if not shortcut_pix.isNull():
+            shortcut_icon.setPixmap(shortcut_pix.scaled(QSize(20,20),Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation))
+        shortcut_icon.setStyleSheet("background:transparent;"); shortcut_lay.addWidget(shortcut_icon)
         shortcut_text=QVBoxLayout(); shortcut_text.setSpacing(1)
         shortcut_label=QLabel("Record That shortcut"); shortcut_label.setObjectName("section")
         self.hotkey_value=QLabel(ShortcutDialog.shortcut_text(self.monitor.shortcut_controls)); self.hotkey_value.setObjectName("value")
@@ -1703,7 +1721,7 @@ class StatusPopover(QFrame):
         action_row=QHBoxLayout(); action_row.setSpacing(7)
         self._add_icon_button(action_row,"Configure\\nshortcut","configure-shortcut.png.b64",self.show_shortcut_page)
         self._add_icon_button(action_row,"Configure\\ncontroller","xbox-icon.png",self.show_controller_page)
-        self._add_icon_button(action_row,"Capture\\nsettings","capture-settings.svg",open_capture_settings)
+        self._add_icon_button(action_row,"Capture\\nsettings","record-capture-icon.png.b64",open_capture_settings)
         root.addLayout(action_row)
         secondary_row=QHBoxLayout(); secondary_row.setSpacing(8)
         self.clips_button=QPushButton(); self.clips_button.setCursor(Qt.CursorShape.PointingHandCursor)
