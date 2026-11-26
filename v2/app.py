@@ -1326,25 +1326,59 @@ class UpdatePromptDialog(QDialog):
 
 class UpdateDownloadWorker(QThread):
     result=Signal(bool,str)
-    def __init__(self, exe_url, sha_url, parent=None):
-        super().__init__(parent); self.exe_url=exe_url; self.sha_url=sha_url
+    def __init__(self, exe_url, sha_url, log_path=None, parent=None):
+        super().__init__(parent)
+        self.exe_url=exe_url
+        self.sha_url=sha_url
+        self.log_path=log_path
+
+    def write_log(self,message):
+        if not self.log_path:
+            return
+        try:
+            with open(self.log_path,"a",encoding="utf-8") as log:
+                log.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {message}\\n")
+        except OSError:
+            pass
+
     def run(self):
         import urllib.request
+        path=None
         try:
+            self.write_log("Download stage started.")
             if not self.exe_url or not self.sha_url:
                 raise RuntimeError("This GitHub release is missing the EXE or SHA-256 checksum asset.")
-            with urllib.request.urlopen(self.sha_url, timeout=20) as r: expected=r.read().decode("ascii").strip().split()[0].lower()
-            fd, path=tempfile.mkstemp(prefix="XboxControllerHotkey-update-",suffix=".exe"); os.close(fd)
+            self.write_log("Downloading release SHA-256 checksum.")
+            with urllib.request.urlopen(self.sha_url, timeout=20) as response:
+                checksum_text=response.read().decode("ascii").strip()
+            match=re.match(r"^([0-9a-fA-F]{64})(?:\\s+.*)?$",checksum_text)
+            if not match:
+                raise RuntimeError("The release checksum file does not contain a valid SHA-256 hash.")
+            expected=match.group(1).lower()
+            fd,path=tempfile.mkstemp(prefix="XboxControllerHotkey-update-",suffix=".exe")
+            os.close(fd)
+            self.write_log("Downloading executable.")
             digest=hashlib.sha256()
-            with urllib.request.urlopen(self.exe_url, timeout=90) as r, open(path,"wb") as out:
+            total_bytes=0
+            with urllib.request.urlopen(self.exe_url, timeout=90) as response, open(path,"wb") as out:
                 while True:
-                    chunk=r.read(1024*1024)
-                    if not chunk: break
-                    out.write(chunk); digest.update(chunk)
-            if digest.hexdigest().lower()!=expected:
-                os.remove(path); raise RuntimeError("The downloaded update failed its SHA-256 verification.")
+                    chunk=response.read(1024*1024)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+                    digest.update(chunk)
+                    total_bytes+=len(chunk)
+            actual=digest.hexdigest().lower()
+            self.write_log(f"Download complete. Bytes={total_bytes}; expected SHA256={expected}; actual SHA256={actual}")
+            if actual!=expected:
+                raise RuntimeError("The downloaded update failed its SHA-256 verification.")
+            self.write_log("Download and checksum verification succeeded.")
             self.result.emit(True,path)
         except Exception as exc:
+            self.write_log(f"DOWNLOAD/VERIFICATION FAILED: {exc!r}")
+            if path and os.path.exists(path):
+                try: os.remove(path)
+                except OSError: pass
             self.result.emit(False,str(exc))
 
 
@@ -2373,9 +2407,20 @@ class StatusPopover(QFrame):
         if not getattr(sys,"frozen",False) or os.name!="nt":
             QMessageBox.information(self,APP_NAME,"Automatic replacement is available in the compiled Windows EXE. For a source run, download the release manually.")
             return
+        self.update_attempt_id=f"{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}"
+        log_dir=os.path.join(os.environ.get("LOCALAPPDATA",tempfile.gettempdir()),APP_NAME,"update-logs")
+        os.makedirs(log_dir,exist_ok=True)
+        self.update_log_path=os.path.join(log_dir,f"update-{self.update_attempt_id}.log")
+        with open(self.update_log_path,"w",encoding="utf-8") as log:
+            log.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Update attempt {self.update_attempt_id} started.\\n")
+            log.write(f"Installed version: {APP_VERSION}\\nTarget version: {self.latest_release_tag}\\n")
+            log.write(f"Executable: {os.path.abspath(sys.executable)}\\n")
+            log.write(f"EXE URL: {self.latest_exe_url}\\nChecksum URL: {self.latest_sha_url}\\n")
         self.update_status.setText("Downloading and verifying update…")
         self.check_button.setEnabled(False)
-        self.update_download_worker=UpdateDownloadWorker(self.latest_exe_url,self.latest_sha_url,self)
+        self.update_download_worker=UpdateDownloadWorker(
+            self.latest_exe_url,self.latest_sha_url,self.update_log_path,self
+        )
         self.update_download_worker.result.connect(self.finish_auto_update)
         self.update_download_worker.start()
 
@@ -2388,10 +2433,10 @@ class StatusPopover(QFrame):
 
         current=os.path.abspath(sys.executable)
         downloaded=os.path.abspath(value)
-        attempt_id=f"{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}"
+        attempt_id=getattr(self,"update_attempt_id",f"{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}")
         log_dir=os.path.join(os.environ.get("LOCALAPPDATA",tempfile.gettempdir()),APP_NAME,"update-logs")
         os.makedirs(log_dir,exist_ok=True)
-        log_path=os.path.join(log_dir,f"update-{attempt_id}.log")
+        log_path=getattr(self,"update_log_path",os.path.join(log_dir,f"update-{attempt_id}.log"))
         helper=os.path.join(tempfile.gettempdir(),f"XboxControllerHotkey-updater-{attempt_id}.ps1")
         handshake_path=os.path.join(tempfile.gettempdir(),f"XboxControllerHotkey-handshake-{attempt_id}.json")
         expected_version=self.latest_release_tag
