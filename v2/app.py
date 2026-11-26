@@ -2748,10 +2748,17 @@ class ConnectionToast(QWidget):
         self.hide_timer.timeout.connect(self.fade_out)
 
     def eventFilter(self, watched, event):
-        if watched is not self.close_button and event.type() == QEvent.Type.MouseButtonRelease:
+        # Qt may deliver events to the shell while this widget is still being
+        # constructed, before close_button and timers have been initialized.
+        close_button = getattr(self, "close_button", None)
+        if close_button is not None and watched is not close_button and event.type() == QEvent.Type.MouseButtonRelease:
             if self.on_click is not None:
-                self.hide_timer.stop()
-                self.fade_animation.stop()
+                hide_timer = getattr(self, "hide_timer", None)
+                if hide_timer is not None:
+                    hide_timer.stop()
+                fade_animation = getattr(self, "fade_animation", None)
+                if fade_animation is not None:
+                    fade_animation.stop()
                 self.hide()
                 self.on_click()
                 return True
