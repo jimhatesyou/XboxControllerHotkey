@@ -18,6 +18,8 @@ import subprocess
 import tempfile
 import shutil
 import base64
+import uuid
+import zipfile
 from ctypes import wintypes
 from dataclasses import dataclass
 from typing import Optional
@@ -1826,6 +1828,11 @@ class StatusPopover(QFrame):
         self.install_update_button.clicked.connect(self.begin_auto_update)
         about_lay.addWidget(self.install_update_button)
 
+        diagnostics_button=QPushButton("Open updater diagnostics")
+        diagnostics_button.setObjectName("secondary")
+        diagnostics_button.clicked.connect(self.open_update_diagnostics)
+        about_lay.addWidget(diagnostics_button)
+
         faq_button=QPushButton("FAQs")
         faq_button.setObjectName("secondary")
         faq_button.clicked.connect(self.show_faq)
@@ -2346,6 +2353,14 @@ class StatusPopover(QFrame):
             # Remind me later means the next popover opening, not immediately.
             self.update_prompt_deferred = True
 
+    def open_update_diagnostics(self):
+        log_dir=os.path.join(os.environ.get("LOCALAPPDATA",tempfile.gettempdir()),APP_NAME,"update-logs")
+        try:
+            os.makedirs(log_dir,exist_ok=True)
+            QDesktopServices.openUrl(QUrl.fromLocalFile(log_dir))
+        except Exception as exc:
+            QMessageBox.warning(self,APP_NAME,f"Could not open updater diagnostics.\n\n{exc}")
+
     def begin_auto_update(self):
         if not getattr(sys,"frozen",False) or os.name!="nt":
             QMessageBox.information(self,APP_NAME,"Automatic replacement is available in the compiled Windows EXE. For a source run, download the release manually.")
@@ -2359,96 +2374,165 @@ class StatusPopover(QFrame):
     def finish_auto_update(self,success,value):
         self.check_button.setEnabled(True)
         if not success:
-            QMessageBox.warning(self,APP_NAME,f"The update could not be installed.\n\n{value}")
-            self.update_status.setText("Update failed. You can retry from About.")
+            QMessageBox.warning(self,APP_NAME,f"The update could not be downloaded or verified.\n\n{value}")
+            self.update_status.setText("Update failed during download or checksum verification.")
             return
-        current=os.path.abspath(sys.executable); downloaded=os.path.abspath(value)
-        helper=os.path.join(tempfile.gettempdir(),f"XboxControllerHotkey-updater-{os.getpid()}.ps1")
-        log_path=os.path.join(tempfile.gettempdir(),"XboxControllerHotkey-update.log")
-        # Download and SHA256 verification happen before this method. The helper
-        # stages the verified file beside the installed EXE, waits for this
-        # process to exit, replaces the original path, and rolls back if the
-        # replacement cannot remain running.
-        script=("param()\n"+
-            "$ErrorActionPreference='Stop'\n"+
-            f"$pidToWait={os.getpid()}\n$source='{downloaded.replace(chr(39), chr(39)*2)}'\n$target='{current.replace(chr(39), chr(39)*2)}'\n"+
-            f"$log='{log_path.replace(chr(39), chr(39)*2)}'\n"+
-            "$tmp=$target+'.update-'+[guid]::NewGuid().ToString('N')+'.tmp'\n"+
-            "$backup=$target+'.backup-'+[guid]::NewGuid().ToString('N')\n"+
-            "$newProcess=$null\n"+
-            "function Write-UpdateLog($message) { Add-Content -LiteralPath $log -Value ('['+(Get-Date -Format o)+'] '+$message) }\n"+
-            "function Restore-PreviousExecutable {\n"+
-            "  if (Test-Path -LiteralPath $backup -PathType Leaf) {\n"+
-            "    if (Test-Path -LiteralPath $target -PathType Leaf) { Remove-Item -LiteralPath $target -Force }\n"+
-            "    [System.IO.File]::Move($backup,$target)\n"+
-            "    Write-UpdateLog 'Previous executable restored.'\n"+
-            "  }\n"+
-            "}\n"+
-            "try {\n"+
-            "  Write-UpdateLog 'Updater started; waiting for application process to exit.'\n"+
-            "  while (Get-Process -Id $pidToWait -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 250 }\n"+
-            "  # Allow Windows to release the executable image mapping after process exit.\n"+
-            "  Start-Sleep -Milliseconds 750\n"+
-            "  if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw 'Verified download is missing.' }\n"+
-            "  $targetDir=Split-Path -Parent $target\n"+
-            "  if (-not (Test-Path -LiteralPath $targetDir -PathType Container)) { throw 'Application folder no longer exists.' }\n"+
-            "  Copy-Item -LiteralPath $source -Destination $tmp -Force\n"+
-            "  if (-not (Test-Path -LiteralPath $tmp -PathType Leaf)) { throw 'Could not stage the downloaded executable.' }\n"+
-            "  if ((Get-Item -LiteralPath $tmp).Length -ne (Get-Item -LiteralPath $source).Length) { throw 'Staged executable size does not match the verified download.' }\n"+
-            "  Write-UpdateLog 'Verified download staged beside installed executable.'\n"+
-            "  $installed=$false\n"+
-            "  for ($i=0; $i -lt 30 -and -not $installed; $i++) {\n"+
-            "    try {\n"+
-            "      if (Test-Path -LiteralPath $target -PathType Leaf) { [System.IO.File]::Replace($tmp,$target,$backup,$true) }\n"+
-            "      else { [System.IO.File]::Move($tmp,$target) }\n"+
-            "      $installed=$true\n"+
-            "      Write-UpdateLog 'Executable replacement succeeded.'\n"+
-            "    } catch {\n"+
-            "      Write-UpdateLog ('Replace attempt '+($i+1)+' failed: '+$_.Exception.Message)\n"+
-            "      if ($i -lt 29) { Start-Sleep -Milliseconds 500 }\n"+
-            "    }\n"+
-            "  }\n"+
-            "  if (-not $installed) {\n"+
-            "    Write-UpdateLog 'Atomic replacement failed; trying same-directory rename sequence.'\n"+
-            "    if (Test-Path -LiteralPath $target -PathType Leaf) { [System.IO.File]::Move($target,$backup) }\n"+
-            "    try { [System.IO.File]::Move($tmp,$target); $installed=$true }\n"+
-            "    catch { Restore-PreviousExecutable; throw ('Could not move the staged executable into the original filename: '+$_.Exception.Message) }\n"+
-            "  }\n"+
-            "  if (-not (Test-Path -LiteralPath $target -PathType Leaf)) { throw 'Replacement reported success but XboxControllerHotkey.exe is missing.' }\n"+
-            "  Write-UpdateLog 'Launching replacement from the original executable path.'\n"+
-            "  $newProcess=Start-Process -FilePath $target -PassThru\n"+
-            "  $startupFailed=$false\n"+
-            "  for ($i=0; $i -lt 16; $i++) {\n"+
-            "    Start-Sleep -Milliseconds 500\n"+
-            "    $newProcess.Refresh()\n"+
-            "    if ($newProcess.HasExited) { $startupFailed=$true; break }\n"+
-            "  }\n"+
-            "  if ($startupFailed) {\n"+
-            "    Write-UpdateLog ('Updated executable exited during startup with code '+$newProcess.ExitCode+'. Rolling back.')\n"+
-            "    Restore-PreviousExecutable\n"+
-            "    if (Test-Path -LiteralPath $target -PathType Leaf) { Start-Process -FilePath $target }\n"+
-            "    throw 'The updated application exited during startup. The previous version was restored and restarted.'\n"+
-            "  }\n"+
-            "  Write-UpdateLog 'Updated application remained running after startup verification.'\n"+
-            "  Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue\n"+
-            "  Remove-Item -LiteralPath $source -Force -ErrorAction SilentlyContinue\n"+
-            "  Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue\n"+
-            "} catch {\n"+
-            "  Write-UpdateLog ('UPDATE FAILED: '+($_ | Out-String))\n"+
-            "  Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue\n"+
-            "  if ($newProcess -and -not $newProcess.HasExited) { Write-UpdateLog 'Replacement process is still running; leaving installed executable untouched.' }\n"+
-            "  elseif (Test-Path -LiteralPath $backup -PathType Leaf) {\n"+
-            "    try { Restore-PreviousExecutable; if (Test-Path -LiteralPath $target -PathType Leaf) { Start-Process -FilePath $target } }\n"+
-            "    catch { Write-UpdateLog ('ROLLBACK FAILED: '+($_ | Out-String)) }\n"+
-            "  }\n"+
-            "}\n")
+
+        current=os.path.abspath(sys.executable)
+        downloaded=os.path.abspath(value)
+        attempt_id=f"{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}"
+        log_dir=os.path.join(os.environ.get("LOCALAPPDATA",tempfile.gettempdir()),APP_NAME,"update-logs")
+        os.makedirs(log_dir,exist_ok=True)
+        log_path=os.path.join(log_dir,f"update-{attempt_id}.log")
+        helper=os.path.join(tempfile.gettempdir(),f"XboxControllerHotkey-updater-{attempt_id}.ps1")
+        handshake_path=os.path.join(tempfile.gettempdir(),f"XboxControllerHotkey-handshake-{attempt_id}.json")
+        expected_version=self.latest_release_tag
+
+        def ps_quote(value):
+            return "'" + str(value).replace("'","''") + "'"
+
+        script = r"""param()
+$ErrorActionPreference = 'Stop'
+$pidToWait = __PID__
+$source = __SOURCE__
+$target = __TARGET__
+$log = __LOG__
+$handshake = __HANDSHAKE__
+$expectedVersion = __VERSION__
+$tmp = $target + '.update-' + [guid]::NewGuid().ToString('N') + '.tmp'
+$backup = $target + '.backup-' + [guid]::NewGuid().ToString('N')
+$newProcess = $null
+function Write-UpdateLog([string]$message) {
+    try { Add-Content -LiteralPath $log -Encoding UTF8 -Value ('['+(Get-Date -Format o)+'] '+$message) } catch {}
+}
+function Restore-PreviousExecutable {
+    if ($newProcess) {
+        try {
+            $newProcess.Refresh()
+            if (-not $newProcess.HasExited) {
+                Stop-Process -Id $newProcess.Id -Force -ErrorAction SilentlyContinue
+                $newProcess.WaitForExit(5000) | Out-Null
+            }
+        } catch {}
+    }
+    if (Test-Path -LiteralPath $backup -PathType Leaf) {
+        if (Test-Path -LiteralPath $target -PathType Leaf) { Remove-Item -LiteralPath $target -Force }
+        [System.IO.File]::Move($backup,$target)
+        Write-UpdateLog 'Rollback completed: previous executable restored.'
+    }
+}
+try {
+    Write-UpdateLog ('Attempt started. ID=' + [guid]::NewGuid().ToString() + '; waiting for PID ' + $pidToWait)
+    $deadline = (Get-Date).AddSeconds(30)
+    while (Get-Process -Id $pidToWait -ErrorAction SilentlyContinue) {
+        if ((Get-Date) -gt $deadline) { throw 'Timed out after 30 seconds waiting for the application to exit. No replacement was attempted.' }
+        Start-Sleep -Milliseconds 200
+    }
+    Start-Sleep -Milliseconds 500
+    if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw 'Verified download is missing.' }
+    $targetDir = Split-Path -Parent $target
+    if (-not (Test-Path -LiteralPath $targetDir -PathType Container)) { throw 'Application folder does not exist.' }
+    Copy-Item -LiteralPath $source -Destination $tmp
+    $sourceHash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
+    $stageHash = (Get-FileHash -LiteralPath $tmp -Algorithm SHA256).Hash
+    if ($sourceHash -ne $stageHash) { throw 'Staged executable SHA-256 does not match the verified download.' }
+    Write-UpdateLog ('Staged executable verified. SHA256=' + $stageHash)
+
+    $installed = $false
+    for ($i=1; $i -le 20 -and -not $installed; $i++) {
+        try {
+            if (Test-Path -LiteralPath $target -PathType Leaf) {
+                [System.IO.File]::Replace($tmp,$target,$backup,$true)
+            } else {
+                [System.IO.File]::Move($tmp,$target)
+            }
+            $installed = $true
+            Write-UpdateLog ('Executable replacement succeeded on attempt ' + $i)
+        } catch {
+            Write-UpdateLog ('Replacement attempt ' + $i + ' failed: ' + $_.Exception.ToString())
+            if ($i -lt 20) { Start-Sleep -Milliseconds 500 }
+        }
+    }
+    if (-not $installed) { throw 'Could not replace the installed executable after 20 attempts. See the individual replacement errors above.' }
+
+    $installedHash = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash
+    if ($installedHash -ne $sourceHash) { throw 'Installed executable SHA-256 does not match the verified download.' }
+    if (Test-Path -LiteralPath $handshake) { Remove-Item -LiteralPath $handshake -Force }
+    $env:XCH_UPDATE_HANDSHAKE = $handshake
+    $env:XCH_EXPECTED_VERSION = $expectedVersion
+    Write-UpdateLog ('Launching replacement. Expected version=' + $expectedVersion + '; SHA256=' + $installedHash)
+    $newProcess = Start-Process -FilePath $target -PassThru
+    Remove-Item Env:XCH_UPDATE_HANDSHAKE -ErrorAction SilentlyContinue
+    Remove-Item Env:XCH_EXPECTED_VERSION -ErrorAction SilentlyContinue
+
+    $verified = $false
+    $startupDeadline = (Get-Date).AddSeconds(25)
+    while ((Get-Date) -lt $startupDeadline) {
+        if (Test-Path -LiteralPath $handshake -PathType Leaf) {
+            $report = Get-Content -LiteralPath $handshake -Raw | ConvertFrom-Json
+            if ($report.version -eq $expectedVersion -and [int]$report.pid -eq $newProcess.Id -and
+                [IO.Path]::GetFullPath($report.executable) -eq [IO.Path]::GetFullPath($target)) {
+                $verified = $true
+                break
+            }
+            throw ('Startup handshake did not match expected process/version/path. Report=' + ($report | ConvertTo-Json -Compress))
+        }
+        $newProcess.Refresh()
+        if ($newProcess.HasExited) { throw ('Updated application exited during startup with code ' + $newProcess.ExitCode) }
+        Start-Sleep -Milliseconds 250
+    }
+    if (-not $verified) { throw 'Timed out waiting for the updated application to confirm its version and executable path.' }
+
+    Write-UpdateLog ('STARTUP VERIFIED. PID=' + $newProcess.Id + '; version=' + $expectedVersion + '; path=' + $target)
+    if (Test-Path -LiteralPath $backup -PathType Leaf) { Remove-Item -LiteralPath $backup -Force }
+    Remove-Item -LiteralPath $source -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $handshake -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+    Write-UpdateLog 'UPDATE COMPLETE. Previous executable backup removed after successful handshake.'
+} catch {
+    $failure = $_.Exception.ToString()
+    Write-UpdateLog ('UPDATE FAILED: ' + $failure)
+    Remove-Item Env:XCH_UPDATE_HANDSHAKE -ErrorAction SilentlyContinue
+    Remove-Item Env:XCH_EXPECTED_VERSION -ErrorAction SilentlyContinue
+    try { Restore-PreviousExecutable } catch { Write-UpdateLog ('ROLLBACK FAILED: ' + $_.Exception.ToString()) }
+    Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $target -PathType Leaf) {
+        try { Start-Process -FilePath $target | Out-Null; Write-UpdateLog 'Previous application launched after failed update.' }
+        catch { Write-UpdateLog ('FAILED TO RESTART APPLICATION: ' + $_.Exception.ToString()) }
+    }
+} finally {
+    Write-UpdateLog ('Updater helper finished. Log=' + $log)
+}
+"""
+        replacements = {
+            "__PID__":str(os.getpid()),
+            "__SOURCE__":ps_quote(downloaded),
+            "__TARGET__":ps_quote(current),
+            "__LOG__":ps_quote(log_path),
+            "__HANDSHAKE__":ps_quote(handshake_path),
+            "__VERSION__":ps_quote(expected_version)
+        }
+        for token,replacement in replacements.items():
+            script=script.replace(token,replacement)
+
         try:
-            with open(helper,"w",encoding="utf-8") as f: f.write(script)
-            subprocess.Popen(["powershell.exe","-NoProfile","-ExecutionPolicy","Bypass","-WindowStyle","Hidden","-File",helper],creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0),close_fds=True)
+            with open(log_path,"w",encoding="utf-8") as f:
+                f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Update attempt {attempt_id} created.\n")
+                f.write(f"Installed version: {APP_VERSION}\nExpected version: {expected_version}\n")
+                f.write(f"Executable: {current}\nDownloaded file: {downloaded}\n")
+            with open(helper,"w",encoding="utf-8") as f:
+                f.write(script)
+            subprocess.Popen(
+                ["powershell.exe","-NoProfile","-ExecutionPolicy","Bypass","-WindowStyle","Hidden","-File",helper],
+                creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0),close_fds=True
+            )
+            self.update_status.setText(f"Updater started. Diagnostics: {log_path}")
             QApplication.quit()
         except Exception as exc:
-            QMessageBox.warning(self,APP_NAME,f"Could not launch the updater: {exc}")
-
+            with open(log_path,"a",encoding="utf-8") as f:
+                f.write(f"HELPER LAUNCH FAILED: {exc!r}\n")
+            QMessageBox.warning(self,APP_NAME,f"Could not launch the updater.\n\n{exc}\n\nLog: {log_path}")
+            self.update_status.setText("Update helper could not be started.")
     def open_latest_release(self):
         QDesktopServices.openUrl(QUrl(self.latest_release_url))
 
@@ -3217,6 +3301,26 @@ def main():
         if result != QDialog.DialogCode.Accepted:
             return 0
     tray_app = TrayApplication(app)
+    handshake_path=os.environ.pop("XCH_UPDATE_HANDSHAKE",None)
+    expected_version=os.environ.pop("XCH_EXPECTED_VERSION",None)
+    if handshake_path and expected_version:
+        try:
+            report={
+                "pid":os.getpid(),
+                "version":APP_VERSION,
+                "executable":os.path.abspath(sys.executable),
+                "expected_version":expected_version,
+                "startup_time":time.time()
+            }
+            if APP_VERSION != expected_version:
+                raise RuntimeError(f"Version mismatch: running {APP_VERSION}, expected {expected_version}")
+            with open(handshake_path,"w",encoding="utf-8") as handshake:
+                json.dump(report,handshake)
+                handshake.flush()
+                os.fsync(handshake.fileno())
+        except Exception as exc:
+            QMessageBox.critical(None,APP_NAME,f"Update startup verification failed.\n\n{exc}")
+            return 1
     return app.exec()
 
 
