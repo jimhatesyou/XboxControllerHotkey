@@ -19,13 +19,6 @@ jobs:
       - name: Compile application source
         run: python -m py_compile v2/app.py
       - name: Verify bundled icon assets
-        shell: pwsh
         run: |
-          $required = @(
-            "v2/assets/configure-shortcut.png.b64",
-            "v2/assets/capture-settings.png.b64",
-            "v2/assets/xbox-icon.png"
-          )
-          foreach ($file in $required) {
-            if (-not (Test-Path $file)) { throw "Missing asset: $file" }
-          }
+          python -c "import base64,pathlib; files=['v2/assets/configure-shortcut.png.b64','v2/assets/capture-settings.png.b64']; [(_ for _ in ()).throw(RuntimeError(f'Invalid PNG asset: {p}')) if not base64.b64decode(pathlib.Path(p).read_text().strip()).startswith(b'\\x89PNG\\r\\n\\x1a\\n') else None for p in files]"
+          python -c "from pathlib import Path; assert Path('v2/assets/xbox-icon.png').is_file()"
