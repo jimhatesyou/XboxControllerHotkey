@@ -1696,8 +1696,10 @@ class StatusPopover(QFrame):
         if not battery_pix.isNull():
             battery_icon.setPixmap(battery_pix.scaled(QSize(20,26),Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation))
         battery_icon.setStyleSheet("background:transparent;"); battery_lay.addWidget(battery_icon)
-        battery_text=QVBoxLayout(); battery_text.setSpacing(1)
+        battery_text=QVBoxLayout(); battery_text.setContentsMargins(0,0,0,0); battery_text.setSpacing(2)
+        battery_text.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
         battery_label=QLabel("Battery"); battery_label.setObjectName("section")
+        battery_label.setStyleSheet("font-size:15px;font-weight:750;color:#F2F4F7;")
         self.battery_value=QLabel("—"); self.battery_value.setObjectName("value")
         battery_text.addWidget(battery_label); battery_text.addWidget(self.battery_value); battery_lay.addLayout(battery_text,1)
         info_row.addWidget(battery_card,1)
@@ -1713,8 +1715,10 @@ class StatusPopover(QFrame):
         if not shortcut_pix.isNull():
             shortcut_icon.setPixmap(shortcut_pix.scaled(QSize(20,20),Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation))
         shortcut_icon.setStyleSheet("background:transparent;"); shortcut_lay.addWidget(shortcut_icon)
-        shortcut_text=QVBoxLayout(); shortcut_text.setSpacing(1)
+        shortcut_text=QVBoxLayout(); shortcut_text.setContentsMargins(0,0,0,0); shortcut_text.setSpacing(2)
+        shortcut_text.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
         shortcut_label=QLabel("Record That shortcut"); shortcut_label.setObjectName("section")
+        shortcut_label.setStyleSheet("font-size:15px;font-weight:750;color:#F2F4F7;")
         self.hotkey_value=QLabel(ShortcutDialog.shortcut_text(self.monitor.shortcut_controls)); self.hotkey_value.setObjectName("value")
         shortcut_text.addWidget(shortcut_label); shortcut_text.addWidget(self.hotkey_value); shortcut_lay.addLayout(shortcut_text,1)
         info_row.addWidget(shortcut_card,1); root.addLayout(info_row)
