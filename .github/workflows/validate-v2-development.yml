@@ -21,6 +21,14 @@ jobs:
           python-version: "3.11"
           architecture: "x64"
 
+      - name: Stamp development version
+        shell: pwsh
+        run: |
+          $app = "v2/app.py"
+          $source = Get-Content -LiteralPath $app -Raw
+          $source = [regex]::Replace($source, '(?m)^APP_VERSION = "[^"]+"', 'APP_VERSION = "2.0.24.0-dev"', 1)
+          Set-Content -LiteralPath $app -Value $source -Encoding utf8
+
       - name: Compile-check Python source
         working-directory: v2
         run: python -m py_compile app.py
