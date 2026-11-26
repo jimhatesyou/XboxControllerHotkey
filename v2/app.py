@@ -1586,7 +1586,7 @@ class StatusPopover(QFrame):
         """)
 
         outer=QVBoxLayout(self)
-        outer.setContentsMargins(16,14,16,4)
+        outer.setContentsMargins(16,14,16,0)
         outer.setSpacing(0)
 
         self.pages=QStackedWidget()
