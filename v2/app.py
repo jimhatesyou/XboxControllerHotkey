@@ -1693,7 +1693,7 @@ class StatusPopover(QFrame):
         info_row.addWidget(shortcut_card,1); root.addLayout(info_row)
         action_row=QHBoxLayout(); action_row.setSpacing(7)
         self._add_icon_button(action_row,"Configure\\nshortcut","configure-shortcut.png.b64",self.show_shortcut_page)
-        self._add_icon_button(action_row,"Configure\\ncontroller","xbox-icon.png",self.show_controller_page)
+        self._add_icon_button(action_row,"Configure\\ncontroller","configure-controller.png.b64",self.show_controller_page)
         self._add_icon_button(action_row,"Capture\\nsettings","capture-settings.png.b64",open_capture_settings)
         root.addLayout(action_row)
         secondary_row=QHBoxLayout(); secondary_row.setSpacing(8)
