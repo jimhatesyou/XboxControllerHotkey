@@ -1,0 +1,31 @@
+name: Validate XboxControllerHotkey V2 source
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "v2/**"
+      - ".github/workflows/validate-v2.yml"
+  workflow_dispatch:
+
+jobs:
+  syntax:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Compile application source
+        run: python -m py_compile v2/app.py
+      - name: Verify bundled icon assets
+        shell: pwsh
+        run: |
+          $required = @(
+            "v2/assets/configure-shortcut.png.b64",
+            "v2/assets/capture-settings.png.b64",
+            "v2/assets/xbox-icon.png"
+          )
+          foreach ($file in $required) {
+            if (-not (Test-Path $file)) { throw "Missing asset: $file" }
+          }
