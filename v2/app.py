@@ -1486,10 +1486,20 @@ class ActivityGraph(QWidget):
             x=(i/(len(self.samples)-1))*w; y=baseline-value*(h-29)
             if i==0: path.moveTo(x,y)
             else: path.lineTo(x,y)
-        area=QPainterPath(path); area.lineTo(w,h); area.lineTo(0,h); area.closeSubpath()
-        alpha=int(26+76*max(self.samples or [0.0]))
-        gradient=QLinearGradient(0,0,0,h); gradient.setColorAt(0,QColor(0,212,81,alpha)); gradient.setColorAt(1,QColor(0,212,81,0))
-        painter.fillPath(area,gradient)
+        points=[]
+        for i,value in enumerate(self.samples):
+            x=(i/(len(self.samples)-1))*w
+            y=baseline-value*(h-29)
+            points.append(QPoint(int(x),int(y)))
+        for i in range(1,len(points)):
+            area=QPainterPath()
+            area.moveTo(points[i-1]); area.lineTo(points[i])
+            area.lineTo(points[i].x(),h); area.lineTo(points[i-1].x(),h); area.closeSubpath()
+            alpha=int(26+76*max(self.samples[i-1],self.samples[i]))
+            gradient=QLinearGradient(0,0,0,h)
+            gradient.setColorAt(0,QColor(0,212,81,alpha))
+            gradient.setColorAt(1,QColor(0,212,81,0))
+            painter.fillPath(area,gradient)
         painter.setPen(QPen(QColor("#00D451"),2.0,Qt.PenStyle.SolidLine,Qt.PenCapStyle.RoundCap,Qt.PenJoinStyle.RoundJoin))
         painter.drawPath(path); painter.end()
 
@@ -2221,7 +2231,9 @@ class StatusPopover(QFrame):
             return
         self.update_request_id += 1
         request_id=self.update_request_id
-        if hasattr(self, "check_button"): self.check_button.setEnabled(False)
+        if hasattr(self, "check_button"):
+            self.check_button.setEnabled(False)
+            self.check_button.setVisible(True)
         if hasattr(self, "release_button"): self.release_button.setVisible(False)
         if hasattr(self, "install_update_button"): self.install_update_button.setVisible(False)
         if not automatic and hasattr(self, "update_status"): self.update_status.setText("Checking GitHub releases…")
@@ -2240,7 +2252,9 @@ class StatusPopover(QFrame):
         if worker is None: return
         if worker.isRunning():
             self.update_timed_out=True; worker.requestInterruption(); self.update_worker=None
-            if hasattr(self, "check_button"): self.check_button.setEnabled(True)
+            if hasattr(self, "check_button"):
+                self.check_button.setEnabled(True)
+                self.check_button.setVisible(True)
             if hasattr(self, "update_status"): self.update_status.setText("GitHub did not respond within 7 seconds. Check your connection or retry.")
             self.update_checked=True
 
@@ -2250,6 +2264,7 @@ class StatusPopover(QFrame):
         if hasattr(self, "check_button"): self.check_button.setEnabled(True)
         self.update_checked=True
         if not tag:
+            if hasattr(self, "check_button"): self.check_button.setVisible(True)
             if not automatic and hasattr(self, "update_status"): self.update_status.setText(detail or "Unable to check GitHub releases. Try again.")
             self.update_worker=None; return
         self.latest_release_url=url if url.startswith("https://github.com/") else GITHUB_RELEASES_PAGE
@@ -2261,6 +2276,8 @@ class StatusPopover(QFrame):
             self.release_button.setVisible(True)
             if hasattr(self, "install_update_button"):
                 self.install_update_button.setVisible(True)
+            if hasattr(self, "check_button"):
+                self.check_button.setVisible(False)
             self.pending_update_prompt = True
             self._maybe_show_update_prompt()
         elif latest==current:
