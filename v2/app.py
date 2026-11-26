@@ -1337,7 +1337,7 @@ class UpdateDownloadWorker(QThread):
             return
         try:
             with open(self.log_path,"a",encoding="utf-8") as log:
-                log.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {message}\\n")
+                log.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {message}\n")
         except OSError:
             pass
 
@@ -1351,7 +1351,7 @@ class UpdateDownloadWorker(QThread):
             self.write_log("Downloading release SHA-256 checksum.")
             with urllib.request.urlopen(self.sha_url, timeout=20) as response:
                 checksum_text=response.read().decode("ascii").strip()
-            match=re.match(r"^([0-9a-fA-F]{64})(?:\\s+.*)?$",checksum_text)
+            match=re.match(r"^([0-9a-fA-F]{64})(?:\s+.*)?$",checksum_text)
             if not match:
                 raise RuntimeError("The release checksum file does not contain a valid SHA-256 hash.")
             expected=match.group(1).lower()
@@ -1757,9 +1757,9 @@ class StatusPopover(QFrame):
         shortcut_text.addWidget(shortcut_label); shortcut_text.addWidget(self.hotkey_value); shortcut_lay.addLayout(shortcut_text,1)
         info_row.addWidget(shortcut_card,1); root.addLayout(info_row)
         action_row=QHBoxLayout(); action_row.setSpacing(8)
-        self._add_icon_button(action_row,"Configure\\nshortcut","configure-shortcut.png.b64",self.show_shortcut_page)
-        self._add_icon_button(action_row,"Configure\\ncontroller","xbox-icon.png",self.show_controller_page)
-        self._add_icon_button(action_row,"Capture\\nsettings","record-capture-icon.png.b64",open_capture_settings)
+        self._add_icon_button(action_row,"Configure\nshortcut","configure-shortcut.png.b64",self.show_shortcut_page)
+        self._add_icon_button(action_row,"Configure\ncontroller","xbox-icon.png",self.show_controller_page)
+        self._add_icon_button(action_row,"Capture\nsettings","record-capture-icon.png.b64",open_capture_settings)
         root.addLayout(action_row)
         secondary_row=QHBoxLayout(); secondary_row.setSpacing(8)
         self.clips_button=QPushButton(); self.clips_button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -2412,10 +2412,10 @@ class StatusPopover(QFrame):
         os.makedirs(log_dir,exist_ok=True)
         self.update_log_path=os.path.join(log_dir,f"update-{self.update_attempt_id}.log")
         with open(self.update_log_path,"w",encoding="utf-8") as log:
-            log.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Update attempt {self.update_attempt_id} started.\\n")
-            log.write(f"Installed version: {APP_VERSION}\\nTarget version: {self.latest_release_tag}\\n")
-            log.write(f"Executable: {os.path.abspath(sys.executable)}\\n")
-            log.write(f"EXE URL: {self.latest_exe_url}\\nChecksum URL: {self.latest_sha_url}\\n")
+            log.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Update attempt {self.update_attempt_id} started.\n")
+            log.write(f"Installed version: {APP_VERSION}\nTarget version: {self.latest_release_tag}\n")
+            log.write(f"Executable: {os.path.abspath(sys.executable)}\n")
+            log.write(f"EXE URL: {self.latest_exe_url}\nChecksum URL: {self.latest_sha_url}\n")
         self.update_status.setText("Downloading and verifying update…")
         self.check_button.setEnabled(False)
         self.update_download_worker=UpdateDownloadWorker(
@@ -2625,7 +2625,7 @@ try {
         if not pix.isNull():
             icon.setPixmap(pix.scaled(QSize(22,22),Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation))
         icon.setStyleSheet("background:transparent;")
-        text=QLabel(label.replace("\\n","\n")); text.setFixedHeight(30); text.setAlignment(Qt.AlignmentFlag.AlignCenter); text.setWordWrap(True)
+        text=QLabel(label.replace("\n","\n")); text.setFixedHeight(30); text.setAlignment(Qt.AlignmentFlag.AlignCenter); text.setWordWrap(True)
         text.setStyleSheet("color:#FFFFFF;font-size:15px;font-weight:800;background:transparent;")
         inner.addWidget(icon,0,Qt.AlignmentFlag.AlignHCenter)
         inner.addWidget(text,0)
@@ -2639,7 +2639,7 @@ try {
             if not QDesktopServices.openUrl(QUrl.fromLocalFile(folder)):
                 raise OSError("Windows could not open the Captures folder.")
         except Exception as exc:
-            QMessageBox.warning(self,APP_NAME,f"Could not open the configured Captures folder.\\n\\n{exc}")
+            QMessageBox.warning(self,APP_NAME,f"Could not open the configured Captures folder.\n\n{exc}")
 
     def _detail_row(self, layout, label, value):
         row = QHBoxLayout()
@@ -3258,7 +3258,7 @@ class TrayApplication:
                                    APP_NAME)
             os.makedirs(log_dir, exist_ok=True)
             with open(os.path.join(log_dir, "input.log"), "a", encoding="utf-8") as log:
-                log.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {message}\\n")
+                log.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {message}\n")
         except Exception:
             pass
 
