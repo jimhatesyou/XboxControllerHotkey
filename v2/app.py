@@ -2336,21 +2336,61 @@ class StatusPopover(QFrame):
         current=os.path.abspath(sys.executable); downloaded=os.path.abspath(value)
         helper=os.path.join(tempfile.gettempdir(),f"XboxControllerHotkey-updater-{os.getpid()}.ps1")
         log_path=os.path.join(tempfile.gettempdir(),"XboxControllerHotkey-update.log")
-        script=("$ErrorActionPreference='Stop'\n"+
+        # The running EXE must exit before Windows can replace it. Stage beside
+        # the target, verify the staged copy, then use a rename/rollback fallback
+        # for filesystems where File.Replace is unavailable or denied.
+        script=("param()\n"+
+            "$ErrorActionPreference='Stop'\n"+
             f"$pidToWait={os.getpid()}\n$source='{downloaded.replace(chr(39), chr(39)*2)}'\n$target='{current.replace(chr(39), chr(39)*2)}'\n"+
             f"$log='{log_path.replace(chr(39), chr(39)*2)}'\n"+
+            "$tmp=$target+'.new'\n$backup=$target+'.old'\n"+
+            "function Write-UpdateLog($message) { Add-Content -LiteralPath $log -Value ('['+(Get-Date -Format o)+'] '+$message) }\n"+
             "try {\n"+
-            "  while (Get-Process -Id $pidToWait -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 300 }\n"+
-            "  $tmp=$target+'.new'\n"+
+            "  Write-UpdateLog 'Updater started; waiting for application exit.'\n"+
+            "  while (Get-Process -Id $pidToWait -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 250 }\n"+
+            "  if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw 'Verified download is missing.' }\n"+
+            "  $targetDir=Split-Path -Parent $target\n"+
+            "  if (-not (Test-Path -LiteralPath $targetDir -PathType Container)) { throw 'Application folder no longer exists.' }\n"+
+            "  Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue\n"+
             "  Copy-Item -LiteralPath $source -Destination $tmp -Force\n"+
+            "  if (-not (Test-Path -LiteralPath $tmp -PathType Leaf)) { throw 'Could not stage the downloaded executable.' }\n"+
+            "  if ((Get-Item -LiteralPath $tmp).Length -ne (Get-Item -LiteralPath $source).Length) { throw 'Staged executable size does not match the verified download.' }\n"+
+            "  Write-UpdateLog 'New executable staged; beginning replacement.'\n"+
             "  $installed=$false\n"+
             "  for ($i=0; $i -lt 20 -and -not $installed; $i++) {\n"+
-            "    try { if (Test-Path -LiteralPath $target) { [System.IO.File]::Replace($tmp,$target,$null) } else { Move-Item -LiteralPath $tmp -Destination $target -Force }; $installed=$true } catch { Start-Sleep -Milliseconds 500 }\n"+
+            "    try {\n"+
+            "      if (Test-Path -LiteralPath $target -PathType Leaf) { [System.IO.File]::Replace($tmp,$target,$backup,$true) } else { [System.IO.File]::Move($tmp,$target) }\n"+
+            "      $installed=$true\n"+
+            "    } catch {\n"+
+            "      Write-UpdateLog ('Atomic replace attempt '+($i+1)+' failed: '+$_.Exception.Message)\n"+
+            "      if ($i -lt 19) { Start-Sleep -Milliseconds 500 }\n"+
+            "    }\n"+
             "  }\n"+
-            "  if (-not $installed) { throw 'Could not replace the existing executable. Check that the application folder is writable.' }\n"+
+            "  if (-not $installed) {\n"+
+            "    Write-UpdateLog 'Atomic replace unavailable; trying backup-and-rename fallback.'\n"+
+            "    if (Test-Path -LiteralPath $target -PathType Leaf) {\n"+
+            "      Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue\n"+
+            "      [System.IO.File]::Move($target,$backup)\n"+
+            "    }\n"+
+            "    try { [System.IO.File]::Move($tmp,$target); $installed=$true }\n"+
+            "    catch {\n"+
+            "      if ((Test-Path -LiteralPath $backup -PathType Leaf) -and -not (Test-Path -LiteralPath $target)) { [System.IO.File]::Move($backup,$target) }\n"+
+            "      throw ('Replacement failed after fallback: '+$_.Exception.Message)\n"+
+            "    }\n"+
+            "  }\n"+
+            "  if (-not (Test-Path -LiteralPath $target -PathType Leaf)) { throw 'Replacement reported success but the executable is missing.' }\n"+
+            "  Write-UpdateLog 'Replacement succeeded; launching updated application.'\n"+
             "  Remove-Item -LiteralPath $source -Force -ErrorAction SilentlyContinue\n"+
+            "  Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue\n"+
             "  Start-Process -FilePath $target\n"+
-            "} catch { $_ | Out-String | Set-Content -LiteralPath $log; if (Test-Path -LiteralPath $target) { Start-Process -FilePath $target } }\n")
+            "  Start-Sleep -Seconds 3\n"+
+            "  if (Get-Process -Name ([System.IO.Path]::GetFileNameWithoutExtension($target)) -ErrorAction SilentlyContinue) { Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue; Write-UpdateLog 'Updated app started successfully.' } else { Write-UpdateLog 'Updated app did not remain running; backup retained for recovery.' }\n"+
+            "} catch {\n"+
+            "  Write-UpdateLog ('UPDATE FAILED: '+($_ | Out-String))\n"+
+            "  Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue\n"+
+            "  if (-not (Test-Path -LiteralPath $target -PathType Leaf) -and (Test-Path -LiteralPath $backup -PathType Leaf)) { [System.IO.File]::Move($backup,$target) }\n"+
+            "  if (Test-Path -LiteralPath $target -PathType Leaf) { Start-Process -FilePath $target }\n"+
+            "}\n")
         try:
             with open(helper,"w",encoding="utf-8") as f: f.write(script)
             subprocess.Popen(["powershell.exe","-NoProfile","-ExecutionPolicy","Bypass","-WindowStyle","Hidden","-File",helper],creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0),close_fds=True)
