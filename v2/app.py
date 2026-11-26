@@ -17,6 +17,7 @@ import hashlib
 import subprocess
 import tempfile
 import shutil
+import base64
 from ctypes import wintypes
 from dataclasses import dataclass
 from typing import Optional
@@ -1499,7 +1500,7 @@ def capture_folder_path():
     if os.name!="nt": return fallback
     try:
         import winreg
-        key_path=r"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders"
+        key_path=r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
         value_name="{EDC0FE71-98D8-4F4A-B920-C8DC133CB165}"
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER,key_path) as key:
             value,_=winreg.QueryValueEx(key,value_name)
@@ -1526,6 +1527,9 @@ class StatusPopover(QFrame):
 
     def resizeEvent(self, event):
         rounded_widget_mask(self, 16)
+        if hasattr(self,"close_button"):
+            self.close_button.setGeometry(self.width()-30,2,30,30)
+            self.close_button.raise_()
         super().resizeEvent(event)
 
     def _build_ui(self):
@@ -1613,7 +1617,7 @@ class StatusPopover(QFrame):
         close_button.clicked.connect(self.hide)
         self.close_button=close_button
         close_button.setParent(self)
-        close_button.setGeometry(self.width()-40,2,30,30)
+        close_button.setGeometry(self.width()-30,2,30,30)
         close_button.raise_()
         root.addLayout(header)
 
@@ -1678,9 +1682,9 @@ class StatusPopover(QFrame):
         shortcut_text.addWidget(shortcut_label); shortcut_text.addWidget(self.hotkey_value); shortcut_lay.addLayout(shortcut_text,1)
         info_row.addWidget(shortcut_card,1); root.addLayout(info_row)
         action_row=QHBoxLayout(); action_row.setSpacing(7)
-        self._add_icon_button(action_row,"Configure\\nshortcut","ABXY",self.show_shortcut_page)
-        self._add_icon_button(action_row,"Configure\\ncontroller","X",self.show_controller_page)
-        self._add_icon_button(action_row,"Capture\\nsettings","◎",open_capture_settings)
+        self._add_icon_button(action_row,"Configure\\nshortcut","configure-shortcut.png.b64",self.show_shortcut_page)
+        self._add_icon_button(action_row,"Configure\\ncontroller","xbox-icon.png",self.show_controller_page)
+        self._add_icon_button(action_row,"Capture\\nsettings","capture-settings.png.b64",open_capture_settings)
         root.addLayout(action_row)
         secondary_row=QHBoxLayout(); secondary_row.setSpacing(8)
         self.clips_button=QPushButton(); self.clips_button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -2349,13 +2353,24 @@ class StatusPopover(QFrame):
     def open_controller_selection(self):
         self._open_page_after_tray_menu(self.show_controller_page)
 
-    def _add_icon_button(self,layout,label,icon_text,callback):
+    def _add_icon_button(self,layout,label,icon_file,callback):
         button=QPushButton(); button.setCursor(Qt.CursorShape.PointingHandCursor)
         button.setFixedHeight(88); button.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
-        inner=QVBoxLayout(button); inner.setContentsMargins(2,6,2,5); inner.setSpacing(2)
-        icon=QLabel(icon_text); icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon.setStyleSheet("color:#FFFFFF;font-size:23px;font-weight:800;background:transparent;")
-        text=QLabel(label); text.setAlignment(Qt.AlignmentFlag.AlignCenter); text.setWordWrap(True)
+        inner=QVBoxLayout(button); inner.setContentsMargins(2,5,2,4); inner.setSpacing(1)
+        icon=QLabel(); icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        pix=QPixmap()
+        try:
+            if icon_file.endswith(".b64"):
+                with open(resource_path(os.path.join("assets",icon_file)),"r",encoding="ascii") as source:
+                    pix.loadFromData(base64.b64decode(source.read().strip()))
+            else:
+                pix=QPixmap(resource_path(os.path.join("assets",icon_file)))
+        except Exception:
+            pass
+        if not pix.isNull():
+            icon.setPixmap(pix.scaled(QSize(34,34),Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation))
+        icon.setStyleSheet("background:transparent;")
+        text=QLabel(label.replace("\\n","\n")); text.setAlignment(Qt.AlignmentFlag.AlignCenter); text.setWordWrap(True)
         text.setStyleSheet("color:#FFFFFF;font-size:12px;font-weight:700;background:transparent;")
         inner.addWidget(icon,1); inner.addWidget(text)
         button.clicked.connect(callback); layout.addWidget(button,1)
