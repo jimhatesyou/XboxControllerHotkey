@@ -2459,6 +2459,15 @@ $expectedVersion = __VERSION__
 $tmp = $target + '.update-' + [guid]::NewGuid().ToString('N') + '.tmp'
 $backup = $target + '.backup-' + [guid]::NewGuid().ToString('N')
 $newProcess = $null
+function Get-SHA256Hash([string]$path) {
+    $algorithm = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $stream = [System.IO.File]::OpenRead($path)
+        try {
+            return ([System.BitConverter]::ToString($algorithm.ComputeHash($stream))).Replace('-','')
+        } finally { $stream.Dispose() }
+    } finally { $algorithm.Dispose() }
+}
 function Write-UpdateLog([string]$message) {
     try { Add-Content -LiteralPath $log -Encoding UTF8 -Value ('['+(Get-Date -Format o)+'] '+$message) } catch {}
 }
@@ -2490,7 +2499,7 @@ try {
     $targetDir = Split-Path -Parent $target
     if (-not (Test-Path -LiteralPath $targetDir -PathType Container)) { throw 'Application folder does not exist.' }
     Copy-Item -LiteralPath $source -Destination $tmp
-    # Use .NET for hashing instead of Get-FileHash so the updater does
+    # Use .NET for hashing instead of Get-SHA256Hash so the updater does
     # not depend on PowerShell module autoloading or PSModulePath.
     $sha256 = [System.Security.Cryptography.SHA256]::Create()
     try {
@@ -2646,7 +2655,7 @@ try {
             # The app may be launched from PowerShell 7. Its PSModulePath can
             # be inherited by Windows PowerShell 5.1 and point at incompatible
             # PowerShell 7 modules, preventing Microsoft.PowerShell.Utility
-            # (including Get-FileHash) from autoloading. Let 5.1 construct its
+            # (including Get-SHA256Hash) from autoloading. Let 5.1 construct its
             # own module path instead.
             helper_env=os.environ.copy()
             helper_env.pop("PSModulePath",None)
