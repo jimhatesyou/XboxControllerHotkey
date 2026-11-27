@@ -54,7 +54,7 @@ except Exception:
 
 
 APP_NAME = "XboxControllerHotkey"
-APP_VERSION = "2.0.24"
+APP_VERSION = "2.0.25"
 ACCESSORIES_AUMID = r"Microsoft.XboxDevices_8wekyb3d8bbwe!App"
 ACCESSORIES_STORE_URI = "ms-windows-store://pdp/?productid=9NBLGGH30XJ3"
 CAPTURE_SETTINGS_URI = "ms-settings:gaming-gamedvr"
@@ -1660,10 +1660,15 @@ class StatusPopover(QFrame):
         brand_font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing,-0.45)
         brand.setFont(brand_font)
         header.addWidget(brand,alignment=Qt.AlignmentFlag.AlignVCenter)
+        brand_block=QWidget()
+        brand_layout=QVBoxLayout(brand_block)
+        brand_layout.setContentsMargins(0,0,0,0)
+        brand_layout.setSpacing(0)
+        brand_layout.addWidget(brand)
         app_version=QLabel(f"v{APP_VERSION}")
-        app_version.setContentsMargins(2,0,0,0)
         app_version.setStyleSheet("color:#A7AFBB;font-size:11px;font-weight:600;")
-        header.addWidget(app_version,alignment=Qt.AlignmentFlag.AlignVCenter)
+        brand_layout.addWidget(app_version)
+        header.addWidget(brand_block,alignment=Qt.AlignmentFlag.AlignVCenter)
         header.addStretch()
         close_button=QPushButton("×")
         close_button.setToolTip("Hide to system tray")
@@ -1686,7 +1691,7 @@ class StatusPopover(QFrame):
         status_wrap=QWidget()
         status_layout=QHBoxLayout(status_wrap)
         status_layout.setContentsMargins(0,0,0,0)
-        status_layout.setSpacing(6)
+        status_layout.setSpacing(4)
         self.state_dot=QLabel("●")
         self.state_dot.setFixedSize(12,18)
         self.state_dot.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1694,8 +1699,8 @@ class StatusPopover(QFrame):
         self.state_text=QLabel("Disconnected")
         self.state_text.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         self.state_text.setStyleSheet("color:#B8C1CE;font-size:12px;font-weight:650;")
-        status_layout.addWidget(self.state_dot,alignment=Qt.AlignmentFlag.AlignVCenter)
         status_layout.addWidget(self.state_text,alignment=Qt.AlignmentFlag.AlignVCenter)
+        status_layout.addWidget(self.state_dot,alignment=Qt.AlignmentFlag.AlignVCenter)
 
         self.controller_icon=QLabel()
         self.controller_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1786,40 +1791,47 @@ class StatusPopover(QFrame):
         clips_label=QLabel("Clips Captured:"); clips_label.setStyleSheet("font-size:16px;font-weight:800;color:#FFFFFF;"); clips_lay.addWidget(clips_label); clips_lay.addStretch()
         self.clip_count_value=QLabel("0"); self.clip_count_value.setStyleSheet("font-size:22px;font-weight:800;color:#FFFFFF;"); clips_lay.addWidget(self.clip_count_value)
         self.clips_button.clicked.connect(self.open_captures_folder); secondary_row.addWidget(self.clips_button,1)
-        about_button=QPushButton("About"); about_button.setObjectName("secondary")
+        about_button=QPushButton(); about_button.setObjectName("secondary")
         about_button.setFixedHeight(56); about_button.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
-        about_icon=QPixmap(resource_path(os.path.join("assets","about-info.svg")))
-        if not about_icon.isNull():
-            about_button.setIcon(QIcon(about_icon))
-            about_button.setIconSize(QSize(22,22))
+        about_layout=QHBoxLayout(about_button); about_layout.setContentsMargins(8,2,8,2); about_layout.setSpacing(7)
+        about_icon=QLabel(); about_icon.setFixedSize(22,22); about_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        about_pix=QPixmap(resource_path(os.path.join("assets","about-info.svg")))
+        if not about_pix.isNull(): about_icon.setPixmap(about_pix.scaled(QSize(20,20),Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation))
+        about_layout.addStretch(); about_layout.addWidget(about_icon)
+        about_label=QLabel("About"); about_label.setStyleSheet("font-size:16px;font-weight:800;color:#FFFFFF;background:transparent;")
+        about_layout.addWidget(about_label); about_layout.addStretch()
         about_button.clicked.connect(self.open_about)
         secondary_row.addWidget(about_button,1); root.addLayout(secondary_row)
         footer=QHBoxLayout()
         footer.setSpacing(6)
         footer.setContentsMargins(0, 0, 0, 0)
-        footer.addWidget(status_wrap,alignment=Qt.AlignmentFlag.AlignBottom)
         footer.addStretch()
         powered_group=QWidget()
-        powered_layout=QHBoxLayout(powered_group)
+        powered_stack=QVBoxLayout(powered_group)
+        powered_stack.setContentsMargins(0,0,0,0)
+        powered_stack.setSpacing(0)
+        powered_layout=QHBoxLayout()
         powered_layout.setContentsMargins(0,0,0,0)
         powered_layout.setSpacing(5)
         powered=QLabel("Powered by")
         powered.setObjectName("subtitle")
         powered_layout.addWidget(powered,alignment=Qt.AlignmentFlag.AlignVCenter)
         logo=QLabel()
-        logo.setFixedSize(48,48)
+        logo.setFixedSize(38,38)
         logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.powered_movie=QMovie(resource_path(os.path.join("assets","powered-by-logo.gif")))
         if self.powered_movie.isValid():
-            self.powered_movie.setScaledSize(QSize(48,48))
+            self.powered_movie.setScaledSize(QSize(38,38))
             logo.setMovie(self.powered_movie)
             self.powered_movie.start()
         else:
             logo_pix=QPixmap(resource_path(os.path.join("assets","powered-by-logo.png")))
             if not logo_pix.isNull():
-                logo.setPixmap(logo_pix.scaled(QSize(48,48),Qt.AspectRatioMode.KeepAspectRatio,
+                logo.setPixmap(logo_pix.scaled(QSize(38,38),Qt.AspectRatioMode.KeepAspectRatio,
                                                Qt.TransformationMode.SmoothTransformation))
         powered_layout.addWidget(logo,alignment=Qt.AlignmentFlag.AlignVCenter)
+        powered_stack.addLayout(powered_layout)
+        powered_stack.addWidget(status_wrap,alignment=Qt.AlignmentFlag.AlignRight)
         footer.addWidget(powered_group,alignment=Qt.AlignmentFlag.AlignVCenter)
         self.activity_graph=ActivityGraph(self.home_page)
         self.activity_graph.activity_source=lambda: getattr(self,"activity_source",lambda:0.0)()
@@ -1844,16 +1856,17 @@ class StatusPopover(QFrame):
         about_lay.addLayout(about_header)
 
         about_title=QLabel(APP_NAME)
-        about_title.setStyleSheet("font-size:18px;font-weight:750;")
+        about_title.setStyleSheet("font-size:18px;font-weight:750;color:#FFFFFF;")
         about_lay.addWidget(about_title)
         about_version=QLabel(f"Version {APP_VERSION}")
-        about_version.setStyleSheet("color:#A7AFBB;font-size:11px;")
+        about_version.setStyleSheet("color:#A7AFBB;font-size:12px;")
         about_lay.addWidget(about_version)
         description=QLabel(
             "Use a two-button controller shortcut to trigger Windows Xbox Game Bar's "
             "Record That feature. Monitor controller connections and battery status "
             "from the system tray."
         )
+        description.setStyleSheet("font-size:12px;color:#FFFFFF;")
         description.setWordWrap(True)
         about_lay.addWidget(description)
 
@@ -1868,7 +1881,7 @@ class StatusPopover(QFrame):
         about_lay.addWidget(created)
 
         self.update_status=QLabel("Checking GitHub releases…")
-        self.update_status.setStyleSheet("color:#A7AFBB;font-size:11px;")
+        self.update_status.setStyleSheet("color:#A7AFBB;font-size:12px;")
         self.update_status.setWordWrap(True)
         about_lay.addWidget(self.update_status)
 
@@ -2595,9 +2608,18 @@ try {
     } finally { $sha256.Dispose() }
     if ($installedHash -ne $sourceHash) { throw 'Installed executable SHA-256 does not match the verified download.' }
     if (Test-Path -LiteralPath $handshake) { Remove-Item -LiteralPath $handshake -Force }
+    # PowerShell inherited the old PyInstaller one-file process environment.
+    # Remove bootloader variables so the replacement extracts into a fresh
+    # _MEI directory instead of reusing the old process temporary directory.
+    Get-ChildItem Env: | Where-Object { $_.Name -like '_PYI_*' } | ForEach-Object {
+        Remove-Item -LiteralPath ('Env:' + $_.Name) -ErrorAction SilentlyContinue
+    }
+    foreach ($name in @('PYTHONHOME','PYTHONPATH','PYTHONEXECUTABLE')) {
+        Remove-Item -LiteralPath ('Env:' + $name) -ErrorAction SilentlyContinue
+    }
     $env:XCH_UPDATE_HANDSHAKE = $handshake
     $env:XCH_EXPECTED_VERSION = $expectedVersion
-    Write-UpdateLog ('Launching replacement. Expected version=' + $expectedVersion + '; SHA256=' + $installedHash)
+    Write-UpdateLog ('Launching replacement with clean PyInstaller/Python environment. Expected version=' + $expectedVersion + '; SHA256=' + $installedHash)
     $newProcess = Start-Process -FilePath $target -PassThru
     Remove-Item Env:XCH_UPDATE_HANDSHAKE -ErrorAction SilentlyContinue
     Remove-Item Env:XCH_EXPECTED_VERSION -ErrorAction SilentlyContinue
