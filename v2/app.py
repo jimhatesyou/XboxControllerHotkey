@@ -2573,10 +2573,38 @@ try {
             script=script.replace(token,replacement)
 
         try:
+            # Portable update preflight: prove this exact executable folder is
+            # writable before shutting down the running app. This works from
+            # any user-writable location (Downloads, Desktop, USB, etc.).
+            # Protected/read-only folders cannot be self-updated without the
+            # required Windows permissions; fail here and keep the app running.
+            target_dir=os.path.dirname(current)
+            probe_path=None
+            try:
+                fd,probe_path=tempfile.mkstemp(
+                    prefix=".XboxControllerHotkey-write-test-",dir=target_dir
+                )
+                os.close(fd)
+                os.remove(probe_path)
+                probe_path=None
+            except Exception as permission_error:
+                if probe_path:
+                    try: os.remove(probe_path)
+                    except OSError: pass
+                raise RuntimeError(
+                    "Windows does not allow this app to write to its current folder. "
+                    "Move it to a folder your Windows account can modify, or change "
+                    "that folder's permissions. The app has not been closed and no "
+                    "files have been replaced.\n\n"
+                    f"Folder: {target_dir}\nReason: {permission_error}"
+                ) from permission_error
+
             with open(log_path,"w",encoding="utf-8") as f:
                 f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Update attempt {attempt_id} created.\n")
                 f.write(f"Installed version: {APP_VERSION}\nExpected version: {expected_version}\n")
-                f.write(f"Executable: {current}\nDownloaded file: {downloaded}\n")
+                f.write(f"Executable: {current}\nExecutable folder (update destination): {target_dir}\n")
+                f.write(f"Downloaded file: {downloaded}\n")
+                f.write("Portable-folder write preflight: PASSED\n")
             with open(helper,"w",encoding="utf-8") as f:
                 f.write(script)
             subprocess.Popen(
