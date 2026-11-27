@@ -67,7 +67,7 @@ def run_powershell(script_path: Path, *args: str, timeout: int = 30) -> subproce
     return subprocess.run(command, capture_output=True, text=True, timeout=timeout)
 
 
-def compile_test_executable(ps: str, out_path: Path, build_version: str, compile_script: Path) -> None:
+def compile_test_executable(out_path: Path, build_version: str, compile_script: Path) -> None:
     result = run_powershell(compile_script, str(out_path), build_version, timeout=45)
     if result.returncode != 0 or not out_path.is_file():
         raise RuntimeError(
@@ -135,8 +135,8 @@ def run_update_case(
     handshake_path = case_root / "startup handshake.json"
     helper_path = case_root / "portable updater helper.ps1"
 
-    compile_test_executable(ps= "", out_path=old_build, build_version="old-build", compile_script=compile_script)
-    compile_test_executable(ps= "", out_path=downloaded, build_version=new_version, compile_script=compile_script)
+    compile_test_executable(out_path=old_build, build_version="old-build", compile_script=compile_script)
+    compile_test_executable(out_path=downloaded, build_version=new_version, compile_script=compile_script)
     shutil.copy2(old_build, target)
     old_hash = hashlib.sha256(target.read_bytes()).hexdigest()
     new_hash = hashlib.sha256(downloaded.read_bytes()).hexdigest()
@@ -146,9 +146,8 @@ def run_update_case(
     old_env["XCH_TEST_OLD_EXIT_SIGNAL"] = str(signal_path)
     old_process = subprocess.Popen([str(target), "wait-old"], env=old_env)
 
-    helper_template = template
     build_helper(
-        helper_template,
+        template,
         helper_path,
         old_process.pid,
         downloaded,
@@ -284,8 +283,8 @@ public static class XCHPortableUpdaterTestApp {
         root.mkdir()
         compile_script = root / "compile-test-app.ps1"
         compile_script.write_text(
-            "$ErrorActionPreference = 'Stop'\n"
             "param([string]$OutputPath, [string]$BuildVersion)\n"
+            "$ErrorActionPreference = 'Stop'\n"
             "$source = @'\n"
             + csharp_template
             + "\n'@\n"
