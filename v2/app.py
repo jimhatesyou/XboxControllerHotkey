@@ -54,7 +54,7 @@ except Exception:
 
 
 APP_NAME = "XboxControllerHotkey"
-APP_VERSION = "2.0.29"
+APP_VERSION = "2.0.30"
 ACCESSORIES_AUMID = r"Microsoft.XboxDevices_8wekyb3d8bbwe!App"
 ACCESSORIES_STORE_URI = "ms-windows-store://pdp/?productid=9NBLGGH30XJ3"
 CAPTURE_SETTINGS_URI = "ms-settings:gaming-gamedvr"
@@ -3523,14 +3523,16 @@ def main():
     if os.name != "nt":
         print("XboxControllerHotkey V2 is designed for Windows 10/11.")
         return 1
-    app = QApplication(sys.argv)
-    app.setApplicationName(APP_NAME)
-    # Only updater-launched replacements get a short retry window. Normal
-    # launches retain immediate duplicate-instance detection.
+    # Capture updater-origin markers BEFORE QApplication processes argv.
+    # Qt may consume or normalize command-line arguments during construction.
     update_relaunch = (
         "--xch-updater-relaunch" in sys.argv
         or bool(os.environ.get("XCH_UPDATE_HANDSHAKE"))
     )
+    app = QApplication(sys.argv)
+    app.setApplicationName(APP_NAME)
+    # Only updater-launched replacements get a short retry window. Normal
+    # launches retain immediate duplicate-instance detection.
     instance_result = acquire_single_instance(retry_seconds=5 if update_relaunch else 0)
     if instance_result is False:
         # An updater relaunch can race with another replacement process that
