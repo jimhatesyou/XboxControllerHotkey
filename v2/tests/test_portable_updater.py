@@ -182,7 +182,13 @@ def run_update_case(
                 raise RuntimeError(f"Updater helper exited before startup acknowledgement.\n{out}\n{err}")
             time.sleep(0.05)
         else:
-            raise TimeoutError("Updater helper did not write its startup acknowledgement.")
+            out, err = helper_process.communicate(timeout=5)
+            helper_diagnostics = log_path.read_text(encoding="utf-8", errors="replace") if log_path.exists() else "<no updater log was created>"
+            raise TimeoutError(
+                "Updater helper did not write its startup acknowledgement.\n"
+                f"Helper stdout:\\n{out}\\nHelper stderr:\\n{err}\\n"
+                f"Updater log:\\n{helper_diagnostics}"
+            )
 
         signal_path.write_text("exit", encoding="utf-8")
         old_process.wait(timeout=10)
