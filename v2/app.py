@@ -54,7 +54,7 @@ except Exception:
 
 
 APP_NAME = "XboxControllerHotkey"
-APP_VERSION = "2.0.21"
+APP_VERSION = "2.0.24"
 ACCESSORIES_AUMID = r"Microsoft.XboxDevices_8wekyb3d8bbwe!App"
 ACCESSORIES_STORE_URI = "ms-windows-store://pdp/?productid=9NBLGGH30XJ3"
 CAPTURE_SETTINGS_URI = "ms-settings:gaming-gamedvr"
@@ -1608,7 +1608,7 @@ class StatusPopover(QFrame):
             QPushButton:pressed { background: #00B948; }
             QPushButton#actionButton {
                 background:#00D451; color:#FFFFFF; border:0; border-radius:9px;
-                padding:0px; min-height:56px; max-height:56px;
+                padding:0px; min-height:124px; max-height:124px;
                 font-size:15px; font-weight:800;
             }
             QPushButton#actionButton:hover { background:#12E56A; }
@@ -1755,7 +1755,7 @@ class StatusPopover(QFrame):
         shortcut_label.setStyleSheet("font-size:15px;font-weight:750;color:#F2F4F7;")
         self.hotkey_value=QLabel(ShortcutDialog.shortcut_text(self.monitor.shortcut_controls)); self.hotkey_value.setObjectName("value")
         shortcut_text.addWidget(shortcut_label); shortcut_text.addWidget(self.hotkey_value); shortcut_lay.addLayout(shortcut_text,1)
-        info_row.addWidget(shortcut_card,1); battery_card.setFixedHeight(64); shortcut_card.setFixedHeight(64); root.addLayout(info_row)
+        info_row.addWidget(shortcut_card,1); battery_card.setFixedHeight(56); shortcut_card.setFixedHeight(56); root.addLayout(info_row)
         action_row=QHBoxLayout(); action_row.setSpacing(8)
         self._add_icon_button(action_row,"Configure\nshortcut","configure-shortcut.png.b64",self.show_shortcut_page)
         self._add_icon_button(action_row,"Configure\ncontroller","xbox-icon.png",self.show_controller_page)
@@ -1814,10 +1814,10 @@ class StatusPopover(QFrame):
                                                Qt.TransformationMode.SmoothTransformation))
         powered_layout.addWidget(logo,alignment=Qt.AlignmentFlag.AlignVCenter)
         footer.addWidget(powered_group,alignment=Qt.AlignmentFlag.AlignVCenter)
-        root.addLayout(footer)
         self.activity_graph=ActivityGraph(self.home_page)
         self.activity_graph.activity_source=lambda: getattr(self,"activity_source",lambda:0.0)()
         root.addWidget(self.activity_graph)
+        root.addLayout(footer)
         self.pages.addWidget(self.home_page)
 
         # ---------------- ABOUT ----------------
@@ -2741,9 +2741,9 @@ try {
     def _add_icon_button(self,layout,label,icon_file,callback):
         button=QPushButton(); button.setObjectName("actionButton")
         button.setCursor(Qt.CursorShape.PointingHandCursor)
-        button.setFixedHeight(112); button.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
-        inner=QVBoxLayout(button); inner.setContentsMargins(3,2,3,2); inner.setSpacing(0)
-        icon=QLabel(); icon.setFixedSize(24,22); icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        button.setFixedHeight(124); button.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
+        inner=QVBoxLayout(button); inner.setContentsMargins(3,10,3,5); inner.setSpacing(2)
+        icon=QLabel(); icon.setFixedSize(33,33); icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         pix=QPixmap()
         try:
             if icon_file.endswith(".b64"):
@@ -2754,7 +2754,7 @@ try {
         except Exception:
             pass
         if not pix.isNull():
-            icon.setPixmap(pix.scaled(QSize(22,22),Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation))
+            icon.setPixmap(pix.scaled(QSize(33,33),Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation))
         icon.setStyleSheet("background:transparent;")
         text=QLabel(label.replace("\n","\n")); text.setFixedHeight(62); text.setAlignment(Qt.AlignmentFlag.AlignCenter); text.setWordWrap(True)
         text.setStyleSheet("color:#FFFFFF;font-size:15px;font-weight:800;background:transparent;")
