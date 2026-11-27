@@ -2629,8 +2629,16 @@ try {
                 f.write("Portable-folder write preflight: PASSED\n")
             with open(helper,"w",encoding="utf-8-sig") as f:
                 f.write(script)
+            # The app may be launched from PowerShell 7. Its PSModulePath can
+            # be inherited by Windows PowerShell 5.1 and point at incompatible
+            # PowerShell 7 modules, preventing Microsoft.PowerShell.Utility
+            # (including Get-FileHash) from autoloading. Let 5.1 construct its
+            # own module path instead.
+            helper_env=os.environ.copy()
+            helper_env.pop("PSModulePath",None)
             helper_process=subprocess.Popen(
-                ["powershell.exe","-NoProfile","-ExecutionPolicy","Bypass","-WindowStyle","Hidden","-File",helper],
+                ["powershell.exe","-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-WindowStyle","Hidden","-File",helper],
+                env=helper_env,
                 creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0),close_fds=True
             )
 
