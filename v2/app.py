@@ -2510,7 +2510,29 @@ try {
             if ($i -lt 20) { Start-Sleep -Milliseconds 500 }
         }
     }
-    if (-not $installed) { throw 'Could not replace the installed executable after 20 attempts. See the individual replacement errors above.' }
+
+    # File.Replace is atomic on supported filesystems, but some removable or
+    # network filesystems do not implement ReplaceFile semantics. Because the
+    # staged file is deliberately created beside the target, a same-directory
+    # rename fallback can still update those portable locations. The old file
+    # is retained as a backup until the new process passes its startup check.
+    if (-not $installed) {
+        try {
+            Write-UpdateLog 'Atomic replacement unavailable after retries; attempting same-directory rename fallback.'
+            if (Test-Path -LiteralPath $target -PathType Leaf) {
+                if (Test-Path -LiteralPath $backup -PathType Leaf) {
+                    throw 'A backup already exists; refusing to overwrite it during fallback.'
+                }
+                [System.IO.File]::Move($target,$backup)
+            }
+            [System.IO.File]::Move($tmp,$target)
+            $installed = $true
+            Write-UpdateLog 'Same-directory rename fallback succeeded.'
+        } catch {
+            Write-UpdateLog ('Same-directory rename fallback failed: ' + $_.Exception.ToString())
+        }
+    }
+    if (-not $installed) { throw 'Could not replace the installed executable. Atomic replacement and same-directory rename fallback both failed. See the updater log for details.' }
 
     $installedHash = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash
     if ($installedHash -ne $sourceHash) { throw 'Installed executable SHA-256 does not match the verified download.' }
