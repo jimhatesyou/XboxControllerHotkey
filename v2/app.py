@@ -1895,21 +1895,25 @@ class StatusPopover(QFrame):
         about_lay.addWidget(self.update_progress)
 
         self.check_button=QPushButton("Check for updates")
+        self.check_button.setStyleSheet("font-size:16px;font-weight:800;")
         self.check_button.clicked.connect(self.check_updates)
         about_lay.addWidget(self.check_button)
 
         self.install_update_button=QPushButton("Update now")
+        self.install_update_button.setStyleSheet("font-size:16px;font-weight:800;")
         self.install_update_button.setVisible(False)
         self.install_update_button.clicked.connect(self.begin_auto_update)
         about_lay.addWidget(self.install_update_button)
 
         diagnostics_button=QPushButton("Open updater diagnostics")
         diagnostics_button.setObjectName("secondary")
+        diagnostics_button.setStyleSheet("font-size:16px;font-weight:800;")
         diagnostics_button.clicked.connect(self.open_update_diagnostics)
         about_lay.addWidget(diagnostics_button)
 
         faq_button=QPushButton("FAQs")
         faq_button.setObjectName("secondary")
+        faq_button.setStyleSheet("font-size:16px;font-weight:800;")
         faq_button.clicked.connect(self.show_faq)
         about_lay.addWidget(faq_button)
 
@@ -1921,10 +1925,12 @@ class StatusPopover(QFrame):
 
         github=QPushButton("View GitHub project")
         github.setObjectName("secondary")
+        github.setStyleSheet("font-size:16px;font-weight:800;")
         github.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(GITHUB_REPO)))
         about_lay.addWidget(github)
         first_launch_button=QPushButton("View first-launch notice")
         first_launch_button.setObjectName("secondary")
+        first_launch_button.setStyleSheet("font-size:16px;font-weight:800;")
         first_launch_button.clicked.connect(self.show_first_launch_notice)
         about_lay.addWidget(first_launch_button)
 
