@@ -278,7 +278,7 @@ def main() -> int:
             "default module path. "
             f"stdout: {preflight.stdout} stderr: {preflight.stderr}"
         )
-    print("PASS PowerShell 5.1 module preflight: Get-FileHash is available.")
+    print("PASS SHA-256 verification will use .NET; no PowerShell hash cmdlet required.")
 
     csharp_template = r'''
 using System;
