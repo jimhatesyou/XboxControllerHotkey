@@ -259,6 +259,27 @@ def main() -> int:
     template = extract_helper_template(app_path)
     ps = powershell_executable()
 
+    # Verify Windows PowerShell 5.1 starts with its own module search path.
+    # The CI runner invokes this Python test from PowerShell 7, which can leak
+    # its module directories through the Python intermediate process.
+    preflight_env = os.environ.copy()
+    preflight_env.pop("PSModulePath", None)
+    preflight = subprocess.run(
+        [
+            ps, "-NoProfile", "-NonInteractive", "-Command",
+            "if (-not (Get-Command Get-FileHash -ErrorAction SilentlyContinue)) { exit 23 }; "
+            "(Get-Command Get-FileHash).Source"
+        ],
+        capture_output=True, text=True, timeout=15, env=preflight_env
+    )
+    if preflight.returncode != 0:
+        raise RuntimeError(
+            "Windows PowerShell 5.1 cannot resolve Get-FileHash even with its "
+            "default module path. "
+            f"stdout: {preflight.stdout} stderr: {preflight.stderr}"
+        )
+    print("PASS PowerShell 5.1 module preflight: Get-FileHash is available.")
+
     csharp_template = r'''
 using System;
 using System.Diagnostics;
