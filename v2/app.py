@@ -2625,7 +2625,10 @@ try {
     $env:XCH_UPDATE_HANDSHAKE = $handshake
     $env:XCH_EXPECTED_VERSION = $expectedVersion
     Write-UpdateLog ('Launching replacement with clean PyInstaller/Python environment. Expected version=' + $expectedVersion + '; SHA256=' + $installedHash)
-    $newProcess = Start-Process -FilePath $target -PassThru
+    # Use an explicit command-line marker as well as environment variables.
+    # This makes updater-origin detection reliable even if a launcher sanitizes
+    # or fails to inherit custom environment variables.
+    $newProcess = Start-Process -FilePath $target -ArgumentList '--xch-updater-relaunch' -PassThru
     Remove-Item Env:XCH_UPDATE_HANDSHAKE -ErrorAction SilentlyContinue
     Remove-Item Env:XCH_EXPECTED_VERSION -ErrorAction SilentlyContinue
 
@@ -3524,7 +3527,10 @@ def main():
     app.setApplicationName(APP_NAME)
     # Only updater-launched replacements get a short retry window. Normal
     # launches retain immediate duplicate-instance detection.
-    update_relaunch = bool(os.environ.get("XCH_UPDATE_HANDSHAKE"))
+    update_relaunch = (
+        "--xch-updater-relaunch" in sys.argv
+        or bool(os.environ.get("XCH_UPDATE_HANDSHAKE"))
+    )
     instance_result = acquire_single_instance(retry_seconds=5 if update_relaunch else 0)
     if instance_result is False:
         # An updater relaunch can race with another replacement process that
