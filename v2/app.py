@@ -2607,10 +2607,47 @@ try {
                 f.write("Portable-folder write preflight: PASSED\n")
             with open(helper,"w",encoding="utf-8") as f:
                 f.write(script)
-            subprocess.Popen(
+            helper_process=subprocess.Popen(
                 ["powershell.exe","-NoProfile","-ExecutionPolicy","Bypass","-WindowStyle","Hidden","-File",helper],
                 creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0),close_fds=True
             )
+
+            # Popen only proves that Windows created powershell.exe. It does
+            # not prove the script actually started. Do not close the app until
+            # the helper has written its own startup record; otherwise a policy
+            # block or immediate PowerShell failure can leave the user with no
+            # running app and no update.
+            helper_ready=False
+            helper_deadline=time.monotonic()+5.0
+            while time.monotonic()<helper_deadline:
+                if os.path.isfile(log_path):
+                    try:
+                        with open(log_path,"r",encoding="utf-8",errors="replace") as log_file:
+                            helper_log=log_file.read()
+                        if "Attempt started." in helper_log:
+                            helper_ready=True
+                            break
+                    except OSError:
+                        pass
+                helper_exit_code=helper_process.poll()
+                if helper_exit_code is not None:
+                    raise RuntimeError(
+                        f"The Windows update helper exited before starting (exit code {helper_exit_code}). "
+                        "The application has been kept open."
+                    )
+                time.sleep(0.1)
+
+            if not helper_ready:
+                if helper_process.poll() is None:
+                    try: helper_process.terminate()
+                    except OSError: pass
+                raise RuntimeError(
+                    "Windows started PowerShell but the update script did not confirm startup. "
+                    "The application has been kept open. Check Windows security or execution-policy restrictions."
+                )
+
+            with open(log_path,"a",encoding="utf-8") as f:
+                f.write("Updater helper startup confirmed; closing app for replacement.\\n")
             self.update_status.setText(f"Updater started. Diagnostics: {log_path}")
             QApplication.quit()
         except Exception as exc:
