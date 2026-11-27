@@ -1,0 +1,59 @@
+name: Validate XboxControllerHotkey development build
+
+on:
+  push:
+    branches:
+      - dev/updater-repair-ui-2026-11-26
+
+permissions:
+  contents: read
+
+jobs:
+  validate-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Check out development branch
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          architecture: "x64"
+
+      - name: Stamp development version
+        shell: pwsh
+        run: |
+          $app = "v2/app.py"
+          $source = Get-Content -LiteralPath $app -Raw
+          $source = [regex]::Replace($source, '(?m)^APP_VERSION = "[^"]+"', 'APP_VERSION = "2.0.24.0-dev"', 1)
+          Set-Content -LiteralPath $app -Value $source -Encoding utf8
+
+      - name: Compile-check Python source
+        working-directory: v2
+        run: python -m py_compile app.py
+
+      - name: Test portable updater on Windows
+        working-directory: v2
+        run: python tests/test_portable_updater.py
+
+      - name: Install dependencies
+        working-directory: v2
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pyinstaller
+
+      - name: Build portable executable
+        working-directory: v2
+        shell: cmd
+        run: |
+          python -m PyInstaller --noconfirm --clean --windowed --onefile --name XboxControllerHotkey --icon "assets\\app-icon.ico" --collect-all pygame --collect-all winsdk --add-data "assets;assets" app.py
+
+      - name: Upload development executable
+        uses: actions/upload-artifact@v6
+        with:
+          name: XboxControllerHotkey-development-build
+          path: v2/dist/XboxControllerHotkey.exe
+          if-no-files-found: error
+          retention-days: 7

@@ -18,6 +18,8 @@ import subprocess
 import tempfile
 import shutil
 import base64
+import uuid
+import zipfile
 from ctypes import wintypes
 from dataclasses import dataclass
 from typing import Optional
@@ -26,7 +28,7 @@ from PySide6.QtCore import Qt, QTimer, QPoint, QRect, QSettings, QSize, QThread,
 from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPen, QBrush, QPixmap, QPainterPath, QRegion, QDesktopServices, QMovie, QLinearGradient
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 from PySide6.QtWidgets import (
-    QApplication, QDialog, QFrame, QHBoxLayout, QLabel, QMenu, QPushButton, QGraphicsOpacityEffect,
+    QApplication, QDialog, QFrame, QStyle, QHBoxLayout, QLabel, QMenu, QPushButton, QGraphicsOpacityEffect,
     QSizePolicy, QSystemTrayIcon, QVBoxLayout, QWidget, QTabWidget, QStackedWidget, QMessageBox, QScrollArea, QListWidget, QCheckBox
 )
 
@@ -1324,25 +1326,59 @@ class UpdatePromptDialog(QDialog):
 
 class UpdateDownloadWorker(QThread):
     result=Signal(bool,str)
-    def __init__(self, exe_url, sha_url, parent=None):
-        super().__init__(parent); self.exe_url=exe_url; self.sha_url=sha_url
+    def __init__(self, exe_url, sha_url, log_path=None, parent=None):
+        super().__init__(parent)
+        self.exe_url=exe_url
+        self.sha_url=sha_url
+        self.log_path=log_path
+
+    def write_log(self,message):
+        if not self.log_path:
+            return
+        try:
+            with open(self.log_path,"a",encoding="utf-8") as log:
+                log.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {message}\n")
+        except OSError:
+            pass
+
     def run(self):
         import urllib.request
+        path=None
         try:
+            self.write_log("Download stage started.")
             if not self.exe_url or not self.sha_url:
                 raise RuntimeError("This GitHub release is missing the EXE or SHA-256 checksum asset.")
-            with urllib.request.urlopen(self.sha_url, timeout=20) as r: expected=r.read().decode("ascii").strip().split()[0].lower()
-            fd, path=tempfile.mkstemp(prefix="XboxControllerHotkey-update-",suffix=".exe"); os.close(fd)
+            self.write_log("Downloading release SHA-256 checksum.")
+            with urllib.request.urlopen(self.sha_url, timeout=20) as response:
+                checksum_text=response.read().decode("ascii").strip()
+            match=re.match(r"^([0-9a-fA-F]{64})(?:\s+.*)?$",checksum_text)
+            if not match:
+                raise RuntimeError("The release checksum file does not contain a valid SHA-256 hash.")
+            expected=match.group(1).lower()
+            fd,path=tempfile.mkstemp(prefix="XboxControllerHotkey-update-",suffix=".exe")
+            os.close(fd)
+            self.write_log("Downloading executable.")
             digest=hashlib.sha256()
-            with urllib.request.urlopen(self.exe_url, timeout=90) as r, open(path,"wb") as out:
+            total_bytes=0
+            with urllib.request.urlopen(self.exe_url, timeout=90) as response, open(path,"wb") as out:
                 while True:
-                    chunk=r.read(1024*1024)
-                    if not chunk: break
-                    out.write(chunk); digest.update(chunk)
-            if digest.hexdigest().lower()!=expected:
-                os.remove(path); raise RuntimeError("The downloaded update failed its SHA-256 verification.")
+                    chunk=response.read(1024*1024)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+                    digest.update(chunk)
+                    total_bytes+=len(chunk)
+            actual=digest.hexdigest().lower()
+            self.write_log(f"Download complete. Bytes={total_bytes}; expected SHA256={expected}; actual SHA256={actual}")
+            if actual!=expected:
+                raise RuntimeError("The downloaded update failed its SHA-256 verification.")
+            self.write_log("Download and checksum verification succeeded.")
             self.result.emit(True,path)
         except Exception as exc:
+            self.write_log(f"DOWNLOAD/VERIFICATION FAILED: {exc!r}")
+            if path and os.path.exists(path):
+                try: os.remove(path)
+                except OSError: pass
             self.result.emit(False,str(exc))
 
 
@@ -1572,7 +1608,7 @@ class StatusPopover(QFrame):
             QPushButton:pressed { background: #00B948; }
             QPushButton#actionButton {
                 background:#00D451; color:#FFFFFF; border:0; border-radius:9px;
-                padding:0px; min-height:88px; max-height:88px;
+                padding:0px; min-height:56px; max-height:56px;
                 font-size:15px; font-weight:800;
             }
             QPushButton#actionButton:hover { background:#12E56A; }
@@ -1605,13 +1641,10 @@ class StatusPopover(QFrame):
         self.home_page=QWidget()
         root=QVBoxLayout(self.home_page)
         root.setContentsMargins(0,0,0,0)
-        root.setSpacing(6)
+        root.setSpacing(8)
 
         header=QHBoxLayout()
         header.setContentsMargins(0,-8,0,0)
-        brand_col=QVBoxLayout()
-        brand_col.setContentsMargins(0,0,0,0)
-        brand_col.setSpacing(0)
         brand=QLabel(APP_NAME)
         brand.setObjectName("title")
         brand_font=QFont(brand.font())
@@ -1619,12 +1652,11 @@ class StatusPopover(QFrame):
         brand_font.setWeight(QFont.Weight.Bold)
         brand_font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing,-0.45)
         brand.setFont(brand_font)
-        brand_col.addWidget(brand)
-        app_version=QLabel(f"Version {APP_VERSION}")
-        app_version.setContentsMargins(0,0,0,0)
-        app_version.setStyleSheet("color:#A7AFBB;font-size:10px;font-weight:500;")
-        brand_col.addWidget(app_version)
-        header.addLayout(brand_col)
+        header.addWidget(brand,alignment=Qt.AlignmentFlag.AlignVCenter)
+        app_version=QLabel(f"v{APP_VERSION}")
+        app_version.setContentsMargins(2,0,0,0)
+        app_version.setStyleSheet("color:#A7AFBB;font-size:11px;font-weight:600;")
+        header.addWidget(app_version,alignment=Qt.AlignmentFlag.AlignVCenter)
         header.addStretch()
         close_button=QPushButton("×")
         close_button.setToolTip("Hide to system tray")
@@ -1723,21 +1755,37 @@ class StatusPopover(QFrame):
         shortcut_label.setStyleSheet("font-size:15px;font-weight:750;color:#F2F4F7;")
         self.hotkey_value=QLabel(ShortcutDialog.shortcut_text(self.monitor.shortcut_controls)); self.hotkey_value.setObjectName("value")
         shortcut_text.addWidget(shortcut_label); shortcut_text.addWidget(self.hotkey_value); shortcut_lay.addLayout(shortcut_text,1)
-        info_row.addWidget(shortcut_card,1); root.addLayout(info_row)
-        action_row=QHBoxLayout(); action_row.setSpacing(7)
-        self._add_icon_button(action_row,"Configure\\nshortcut","configure-shortcut.png.b64",self.show_shortcut_page)
-        self._add_icon_button(action_row,"Configure\\ncontroller","xbox-icon.png",self.show_controller_page)
-        self._add_icon_button(action_row,"Capture\\nsettings","record-capture-icon.png.b64",open_capture_settings)
+        info_row.addWidget(shortcut_card,1); battery_card.setFixedHeight(64); shortcut_card.setFixedHeight(64); root.addLayout(info_row)
+        action_row=QHBoxLayout(); action_row.setSpacing(8)
+        self._add_icon_button(action_row,"Configure\nshortcut","configure-shortcut.png.b64",self.show_shortcut_page)
+        self._add_icon_button(action_row,"Configure\ncontroller","xbox-icon.png",self.show_controller_page)
+        self._add_icon_button(action_row,"Capture\nsettings","record-capture-icon.png.b64",open_capture_settings)
         root.addLayout(action_row)
         secondary_row=QHBoxLayout(); secondary_row.setSpacing(8)
         self.clips_button=QPushButton(); self.clips_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.clips_button.setStyleSheet("QPushButton{background:rgba(38,45,56,225);color:#FFFFFF;border:2px solid #00D451;border-radius:12px;padding:5px;min-height:48px;max-height:48px;} QPushButton:hover{background:#25342D;}")
+        self.clips_button.setFixedHeight(56); clips_button.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
+        clips_button.setStyleSheet("QPushButton{background:rgba(38,45,56,225);color:#FFFFFF;border:2px solid #00D451;border-radius:12px;padding:5px;} QPushButton:hover{background:#25342D;}")
         clips_lay=QHBoxLayout(self.clips_button); clips_lay.setContentsMargins(8,2,8,2); clips_lay.setSpacing(7)
-        clips_icon=QLabel("▣"); clips_icon.setStyleSheet("font-size:22px;color:#FFFFFF;"); clips_lay.addWidget(clips_icon)
-        clips_label=QLabel("Clips Captured"); clips_label.setStyleSheet("font-size:16px;font-weight:800;color:#FFFFFF;"); clips_lay.addWidget(clips_label); clips_lay.addStretch()
+        clips_icon=QLabel(); clips_icon.setFixedSize(22,22); clips_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        clips_pix=QPixmap()
+        try:
+            with open(resource_path(os.path.join("assets","record-capture-icon.png.b64")),"r",encoding="ascii") as source:
+                clips_pix.loadFromData(base64.b64decode(source.read().strip()))
+        except Exception:
+            pass
+        if not clips_pix.isNull():
+            clips_icon.setPixmap(clips_pix.scaled(QSize(20,20),Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation))
+        clips_lay.addWidget(clips_icon)
+        clips_label=QLabel("Clips Captured:"); clips_label.setStyleSheet("font-size:16px;font-weight:800;color:#FFFFFF;"); clips_lay.addWidget(clips_label); clips_lay.addStretch()
         self.clip_count_value=QLabel("0"); self.clip_count_value.setStyleSheet("font-size:22px;font-weight:800;color:#FFFFFF;"); clips_lay.addWidget(self.clip_count_value)
         self.clips_button.clicked.connect(self.open_captures_folder); secondary_row.addWidget(self.clips_button,1)
-        about_button=QPushButton("ⓘ   About"); about_button.setObjectName("secondary"); about_button.clicked.connect(self.open_about)
+        about_button=QPushButton("About"); about_button.setObjectName("secondary")
+        about_button.setFixedHeight(56); about_button.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
+        about_icon=QPixmap(resource_path(os.path.join("assets","about-info.svg")))
+        if not about_icon.isNull():
+            about_button.setIcon(QIcon(about_icon))
+            about_button.setIconSize(QSize(22,22))
+        about_button.clicked.connect(self.open_about)
         secondary_row.addWidget(about_button,1); root.addLayout(secondary_row)
         footer=QHBoxLayout()
         footer.setSpacing(6)
@@ -1825,6 +1873,11 @@ class StatusPopover(QFrame):
         self.install_update_button.setVisible(False)
         self.install_update_button.clicked.connect(self.begin_auto_update)
         about_lay.addWidget(self.install_update_button)
+
+        diagnostics_button=QPushButton("Open updater diagnostics")
+        diagnostics_button.setObjectName("secondary")
+        diagnostics_button.clicked.connect(self.open_update_diagnostics)
+        about_lay.addWidget(diagnostics_button)
 
         faq_button=QPushButton("FAQs")
         faq_button.setObjectName("secondary")
@@ -2346,109 +2399,324 @@ class StatusPopover(QFrame):
             # Remind me later means the next popover opening, not immediately.
             self.update_prompt_deferred = True
 
+    def open_update_diagnostics(self):
+        log_dir=os.path.join(os.environ.get("LOCALAPPDATA",tempfile.gettempdir()),APP_NAME,"update-logs")
+        try:
+            os.makedirs(log_dir,exist_ok=True)
+            QDesktopServices.openUrl(QUrl.fromLocalFile(log_dir))
+        except Exception as exc:
+            QMessageBox.warning(self,APP_NAME,f"Could not open updater diagnostics.\n\n{exc}")
+
     def begin_auto_update(self):
         if not getattr(sys,"frozen",False) or os.name!="nt":
             QMessageBox.information(self,APP_NAME,"Automatic replacement is available in the compiled Windows EXE. For a source run, download the release manually.")
             return
+        self.update_attempt_id=f"{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}"
+        log_dir=os.path.join(os.environ.get("LOCALAPPDATA",tempfile.gettempdir()),APP_NAME,"update-logs")
+        os.makedirs(log_dir,exist_ok=True)
+        self.update_log_path=os.path.join(log_dir,f"update-{self.update_attempt_id}.log")
+        with open(self.update_log_path,"w",encoding="utf-8") as log:
+            log.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Update attempt {self.update_attempt_id} started.\n")
+            log.write(f"Installed version: {APP_VERSION}\nTarget version: {self.latest_release_tag}\n")
+            log.write(f"Executable: {os.path.abspath(sys.executable)}\n")
+            log.write(f"EXE URL: {self.latest_exe_url}\nChecksum URL: {self.latest_sha_url}\n")
         self.update_status.setText("Downloading and verifying update…")
         self.check_button.setEnabled(False)
-        self.update_download_worker=UpdateDownloadWorker(self.latest_exe_url,self.latest_sha_url,self)
+        self.update_download_worker=UpdateDownloadWorker(
+            self.latest_exe_url,self.latest_sha_url,self.update_log_path,self
+        )
         self.update_download_worker.result.connect(self.finish_auto_update)
         self.update_download_worker.start()
 
     def finish_auto_update(self,success,value):
         self.check_button.setEnabled(True)
         if not success:
-            QMessageBox.warning(self,APP_NAME,f"The update could not be installed.\n\n{value}")
-            self.update_status.setText("Update failed. You can retry from About.")
+            QMessageBox.warning(self,APP_NAME,f"The update could not be downloaded or verified.\n\n{value}")
+            self.update_status.setText("Update failed during download or checksum verification.")
             return
-        current=os.path.abspath(sys.executable); downloaded=os.path.abspath(value)
-        helper=os.path.join(tempfile.gettempdir(),f"XboxControllerHotkey-updater-{os.getpid()}.ps1")
-        log_path=os.path.join(tempfile.gettempdir(),"XboxControllerHotkey-update.log")
-        # Download and SHA256 verification happen before this method. The helper
-        # stages the verified file beside the installed EXE, waits for this
-        # process to exit, replaces the original path, and rolls back if the
-        # replacement cannot remain running.
-        script=("param()\n"+
-            "$ErrorActionPreference='Stop'\n"+
-            f"$pidToWait={os.getpid()}\n$source='{downloaded.replace(chr(39), chr(39)*2)}'\n$target='{current.replace(chr(39), chr(39)*2)}'\n"+
-            f"$log='{log_path.replace(chr(39), chr(39)*2)}'\n"+
-            "$tmp=$target+'.update-'+[guid]::NewGuid().ToString('N')+'.tmp'\n"+
-            "$backup=$target+'.backup-'+[guid]::NewGuid().ToString('N')\n"+
-            "$newProcess=$null\n"+
-            "function Write-UpdateLog($message) { Add-Content -LiteralPath $log -Value ('['+(Get-Date -Format o)+'] '+$message) }\n"+
-            "function Restore-PreviousExecutable {\n"+
-            "  if (Test-Path -LiteralPath $backup -PathType Leaf) {\n"+
-            "    if (Test-Path -LiteralPath $target -PathType Leaf) { Remove-Item -LiteralPath $target -Force }\n"+
-            "    [System.IO.File]::Move($backup,$target)\n"+
-            "    Write-UpdateLog 'Previous executable restored.'\n"+
-            "  }\n"+
-            "}\n"+
-            "try {\n"+
-            "  Write-UpdateLog 'Updater started; waiting for application process to exit.'\n"+
-            "  while (Get-Process -Id $pidToWait -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 250 }\n"+
-            "  # Allow Windows to release the executable image mapping after process exit.\n"+
-            "  Start-Sleep -Milliseconds 750\n"+
-            "  if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw 'Verified download is missing.' }\n"+
-            "  $targetDir=Split-Path -Parent $target\n"+
-            "  if (-not (Test-Path -LiteralPath $targetDir -PathType Container)) { throw 'Application folder no longer exists.' }\n"+
-            "  Copy-Item -LiteralPath $source -Destination $tmp -Force\n"+
-            "  if (-not (Test-Path -LiteralPath $tmp -PathType Leaf)) { throw 'Could not stage the downloaded executable.' }\n"+
-            "  if ((Get-Item -LiteralPath $tmp).Length -ne (Get-Item -LiteralPath $source).Length) { throw 'Staged executable size does not match the verified download.' }\n"+
-            "  Write-UpdateLog 'Verified download staged beside installed executable.'\n"+
-            "  $installed=$false\n"+
-            "  for ($i=0; $i -lt 30 -and -not $installed; $i++) {\n"+
-            "    try {\n"+
-            "      if (Test-Path -LiteralPath $target -PathType Leaf) { [System.IO.File]::Replace($tmp,$target,$backup,$true) }\n"+
-            "      else { [System.IO.File]::Move($tmp,$target) }\n"+
-            "      $installed=$true\n"+
-            "      Write-UpdateLog 'Executable replacement succeeded.'\n"+
-            "    } catch {\n"+
-            "      Write-UpdateLog ('Replace attempt '+($i+1)+' failed: '+$_.Exception.Message)\n"+
-            "      if ($i -lt 29) { Start-Sleep -Milliseconds 500 }\n"+
-            "    }\n"+
-            "  }\n"+
-            "  if (-not $installed) {\n"+
-            "    Write-UpdateLog 'Atomic replacement failed; trying same-directory rename sequence.'\n"+
-            "    if (Test-Path -LiteralPath $target -PathType Leaf) { [System.IO.File]::Move($target,$backup) }\n"+
-            "    try { [System.IO.File]::Move($tmp,$target); $installed=$true }\n"+
-            "    catch { Restore-PreviousExecutable; throw ('Could not move the staged executable into the original filename: '+$_.Exception.Message) }\n"+
-            "  }\n"+
-            "  if (-not (Test-Path -LiteralPath $target -PathType Leaf)) { throw 'Replacement reported success but XboxControllerHotkey.exe is missing.' }\n"+
-            "  Write-UpdateLog 'Launching replacement from the original executable path.'\n"+
-            "  $newProcess=Start-Process -FilePath $target -PassThru\n"+
-            "  $startupFailed=$false\n"+
-            "  for ($i=0; $i -lt 16; $i++) {\n"+
-            "    Start-Sleep -Milliseconds 500\n"+
-            "    $newProcess.Refresh()\n"+
-            "    if ($newProcess.HasExited) { $startupFailed=$true; break }\n"+
-            "  }\n"+
-            "  if ($startupFailed) {\n"+
-            "    Write-UpdateLog ('Updated executable exited during startup with code '+$newProcess.ExitCode+'. Rolling back.')\n"+
-            "    Restore-PreviousExecutable\n"+
-            "    if (Test-Path -LiteralPath $target -PathType Leaf) { Start-Process -FilePath $target }\n"+
-            "    throw 'The updated application exited during startup. The previous version was restored and restarted.'\n"+
-            "  }\n"+
-            "  Write-UpdateLog 'Updated application remained running after startup verification.'\n"+
-            "  Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue\n"+
-            "  Remove-Item -LiteralPath $source -Force -ErrorAction SilentlyContinue\n"+
-            "  Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue\n"+
-            "} catch {\n"+
-            "  Write-UpdateLog ('UPDATE FAILED: '+($_ | Out-String))\n"+
-            "  Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue\n"+
-            "  if ($newProcess -and -not $newProcess.HasExited) { Write-UpdateLog 'Replacement process is still running; leaving installed executable untouched.' }\n"+
-            "  elseif (Test-Path -LiteralPath $backup -PathType Leaf) {\n"+
-            "    try { Restore-PreviousExecutable; if (Test-Path -LiteralPath $target -PathType Leaf) { Start-Process -FilePath $target } }\n"+
-            "    catch { Write-UpdateLog ('ROLLBACK FAILED: '+($_ | Out-String)) }\n"+
-            "  }\n"+
-            "}\n")
+
+        current=os.path.abspath(sys.executable)
+        downloaded=os.path.abspath(value)
+        attempt_id=getattr(self,"update_attempt_id",f"{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}")
+        log_dir=os.path.join(os.environ.get("LOCALAPPDATA",tempfile.gettempdir()),APP_NAME,"update-logs")
+        os.makedirs(log_dir,exist_ok=True)
+        log_path=getattr(self,"update_log_path",os.path.join(log_dir,f"update-{attempt_id}.log"))
+        helper=os.path.join(tempfile.gettempdir(),f"XboxControllerHotkey-updater-{attempt_id}.ps1")
+        handshake_path=os.path.join(tempfile.gettempdir(),f"XboxControllerHotkey-handshake-{attempt_id}.json")
+        expected_version=self.latest_release_tag
+
+        def ps_quote(value):
+            return "'" + str(value).replace("'","''") + "'"
+
+        script = r"""param()
+$ErrorActionPreference = 'Stop'
+$pidToWait = __PID__
+$source = __SOURCE__
+$target = __TARGET__
+$log = __LOG__
+$handshake = __HANDSHAKE__
+$expectedVersion = __VERSION__
+$tmp = $target + '.update-' + [guid]::NewGuid().ToString('N') + '.tmp'
+$backup = $target + '.backup-' + [guid]::NewGuid().ToString('N')
+$newProcess = $null
+function Get-SHA256Hash([string]$path) {
+    $algorithm = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $stream = [System.IO.File]::OpenRead($path)
+        try {
+            return ([System.BitConverter]::ToString($algorithm.ComputeHash($stream))).Replace('-','')
+        } finally { $stream.Dispose() }
+    } finally { $algorithm.Dispose() }
+}
+function Write-UpdateLog([string]$message) {
+    try { Add-Content -LiteralPath $log -Encoding UTF8 -Value ('['+(Get-Date -Format o)+'] '+$message) } catch {}
+}
+function Restore-PreviousExecutable {
+    if ($newProcess) {
+        try {
+            $newProcess.Refresh()
+            if (-not $newProcess.HasExited) {
+                Stop-Process -Id $newProcess.Id -Force -ErrorAction SilentlyContinue
+                $newProcess.WaitForExit(5000) | Out-Null
+            }
+        } catch {}
+    }
+    if (Test-Path -LiteralPath $backup -PathType Leaf) {
+        if (Test-Path -LiteralPath $target -PathType Leaf) { Remove-Item -LiteralPath $target -Force }
+        [System.IO.File]::Move($backup,$target)
+        Write-UpdateLog 'Rollback completed: previous executable restored.'
+    }
+}
+try {
+    Write-UpdateLog ('Attempt started. ID=' + [guid]::NewGuid().ToString() + '; waiting for PID ' + $pidToWait)
+    $deadline = (Get-Date).AddSeconds(30)
+    while (Get-Process -Id $pidToWait -ErrorAction SilentlyContinue) {
+        if ((Get-Date) -gt $deadline) { throw 'Timed out after 30 seconds waiting for the application to exit. No replacement was attempted.' }
+        Start-Sleep -Milliseconds 200
+    }
+    Start-Sleep -Milliseconds 500
+    if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw 'Verified download is missing.' }
+    $targetDir = Split-Path -Parent $target
+    if (-not (Test-Path -LiteralPath $targetDir -PathType Container)) { throw 'Application folder does not exist.' }
+    Copy-Item -LiteralPath $source -Destination $tmp
+    # Use .NET for hashing instead of Get-SHA256Hash so the updater does
+    # not depend on PowerShell module autoloading or PSModulePath.
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $sourceStream = [System.IO.File]::OpenRead($source)
+        try { $sourceHash = ([System.BitConverter]::ToString($sha256.ComputeHash($sourceStream))).Replace('-','') }
+        finally { $sourceStream.Dispose() }
+        $stageStream = [System.IO.File]::OpenRead($tmp)
+        try { $stageHash = ([System.BitConverter]::ToString($sha256.ComputeHash($stageStream))).Replace('-','') }
+        finally { $stageStream.Dispose() }
+    } finally { $sha256.Dispose() }
+    if ($sourceHash -ne $stageHash) { throw 'Staged executable SHA-256 does not match the verified download.' }
+    Write-UpdateLog ('Staged executable verified. SHA256=' + $stageHash)
+
+    $installed = $false
+    for ($i=1; $i -le 20 -and -not $installed; $i++) {
+        try {
+            if (Test-Path -LiteralPath $target -PathType Leaf) {
+                [System.IO.File]::Replace($tmp,$target,$backup,$true)
+            } else {
+                [System.IO.File]::Move($tmp,$target)
+            }
+            $installed = $true
+            Write-UpdateLog ('Executable replacement succeeded on attempt ' + $i)
+        } catch {
+            Write-UpdateLog ('Replacement attempt ' + $i + ' failed: ' + $_.Exception.ToString())
+            if ($i -lt 20) { Start-Sleep -Milliseconds 500 }
+        }
+    }
+
+    # File.Replace is atomic on supported filesystems, but some removable or
+    # network filesystems do not implement ReplaceFile semantics. Because the
+    # staged file is deliberately created beside the target, a same-directory
+    # rename fallback can still update those portable locations. The old file
+    # is retained as a backup until the new process passes its startup check.
+    if (-not $installed) {
+        try {
+            Write-UpdateLog 'Atomic replacement unavailable after retries; attempting same-directory rename fallback.'
+            if (Test-Path -LiteralPath $target -PathType Leaf) {
+                if (Test-Path -LiteralPath $backup -PathType Leaf) {
+                    throw 'A backup already exists; refusing to overwrite it during fallback.'
+                }
+                [System.IO.File]::Move($target,$backup)
+            }
+            [System.IO.File]::Move($tmp,$target)
+            $installed = $true
+            Write-UpdateLog 'Same-directory rename fallback succeeded.'
+        } catch {
+            Write-UpdateLog ('Same-directory rename fallback failed: ' + $_.Exception.ToString())
+        }
+    }
+    if (-not $installed) { throw 'Could not replace the installed executable. Atomic replacement and same-directory rename fallback both failed. See the updater log for details.' }
+
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $installedStream = [System.IO.File]::OpenRead($target)
+        try { $installedHash = ([System.BitConverter]::ToString($sha256.ComputeHash($installedStream))).Replace('-','') }
+        finally { $installedStream.Dispose() }
+    } finally { $sha256.Dispose() }
+    if ($installedHash -ne $sourceHash) { throw 'Installed executable SHA-256 does not match the verified download.' }
+    if (Test-Path -LiteralPath $handshake) { Remove-Item -LiteralPath $handshake -Force }
+    $env:XCH_UPDATE_HANDSHAKE = $handshake
+    $env:XCH_EXPECTED_VERSION = $expectedVersion
+    Write-UpdateLog ('Launching replacement. Expected version=' + $expectedVersion + '; SHA256=' + $installedHash)
+    $newProcess = Start-Process -FilePath $target -PassThru
+    Remove-Item Env:XCH_UPDATE_HANDSHAKE -ErrorAction SilentlyContinue
+    Remove-Item Env:XCH_EXPECTED_VERSION -ErrorAction SilentlyContinue
+
+    $verified = $false
+    $startupDeadline = (Get-Date).AddSeconds(25)
+    while ((Get-Date) -lt $startupDeadline) {
+        if (Test-Path -LiteralPath $handshake -PathType Leaf) {
+            $report = Get-Content -LiteralPath $handshake -Raw | ConvertFrom-Json
+            # The installed image SHA-256 is verified immediately before
+            # launch. Confirm the replacement process and version here without
+            # comparing path strings, which are unsafe for Unicode/8.3 paths.
+            $pidMatches = [int]$report.pid -eq $newProcess.Id
+            $versionMatches = [string]$report.version -eq [string]$expectedVersion
+            if ($versionMatches -and $pidMatches) {
+                $verified = $true
+                break
+            }
+            throw ('Startup handshake mismatch. Expected PID=' + $newProcess.Id +
+                '; reported PID=' + $report.pid +
+                '; version match=' + $versionMatches +
+                '; expected version=' + $expectedVersion +
+                '; reported version=' + $report.version +
+                '; report=' + ($report | ConvertTo-Json -Compress))
+        }
+        $newProcess.Refresh()
+        if ($newProcess.HasExited) { throw ('Updated application exited during startup with code ' + $newProcess.ExitCode) }
+        Start-Sleep -Milliseconds 250
+    }
+    if (-not $verified) { throw 'Timed out waiting for the updated application to confirm its version and executable path.' }
+
+    Write-UpdateLog ('STARTUP VERIFIED. PID=' + $newProcess.Id + '; version=' + $expectedVersion + '; path=' + $target)
+    if (Test-Path -LiteralPath $backup -PathType Leaf) { Remove-Item -LiteralPath $backup -Force }
+    Remove-Item -LiteralPath $source -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $handshake -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+    Write-UpdateLog 'UPDATE COMPLETE. Previous executable backup removed after successful handshake.'
+} catch {
+    $failure = $_.Exception.ToString()
+    Write-UpdateLog ('UPDATE FAILED: ' + $failure)
+    Remove-Item Env:XCH_UPDATE_HANDSHAKE -ErrorAction SilentlyContinue
+    Remove-Item Env:XCH_EXPECTED_VERSION -ErrorAction SilentlyContinue
+    try { Restore-PreviousExecutable } catch { Write-UpdateLog ('ROLLBACK FAILED: ' + $_.Exception.ToString()) }
+    Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $target -PathType Leaf) {
+        try { Start-Process -FilePath $target | Out-Null; Write-UpdateLog 'Previous application launched after failed update.' }
+        catch { Write-UpdateLog ('FAILED TO RESTART APPLICATION: ' + $_.Exception.ToString()) }
+    }
+} finally {
+    Write-UpdateLog ('Updater helper finished. Log=' + $log)
+}
+"""
+        replacements = {
+            "__PID__":str(os.getpid()),
+            "__SOURCE__":ps_quote(downloaded),
+            "__TARGET__":ps_quote(current),
+            "__LOG__":ps_quote(log_path),
+            "__HANDSHAKE__":ps_quote(handshake_path),
+            "__VERSION__":ps_quote(expected_version)
+        }
+        for token,replacement in replacements.items():
+            script=script.replace(token,replacement)
+
         try:
-            with open(helper,"w",encoding="utf-8") as f: f.write(script)
-            subprocess.Popen(["powershell.exe","-NoProfile","-ExecutionPolicy","Bypass","-WindowStyle","Hidden","-File",helper],creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0),close_fds=True)
+            # Portable update preflight: prove this exact executable folder is
+            # writable before shutting down the running app. This works from
+            # any user-writable location (Downloads, Desktop, USB, etc.).
+            # Protected/read-only folders cannot be self-updated without the
+            # required Windows permissions; fail here and keep the app running.
+            target_dir=os.path.dirname(current)
+            probe_path=None
+            try:
+                fd,probe_path=tempfile.mkstemp(
+                    prefix=".XboxControllerHotkey-write-test-",dir=target_dir
+                )
+                os.close(fd)
+                os.remove(probe_path)
+                probe_path=None
+            except Exception as permission_error:
+                if probe_path:
+                    try: os.remove(probe_path)
+                    except OSError: pass
+                raise RuntimeError(
+                    "Windows does not allow this app to write to its current folder. "
+                    "Move it to a folder your Windows account can modify, or change "
+                    "that folder's permissions. The app has not been closed and no "
+                    "files have been replaced.\n\n"
+                    f"Folder: {target_dir}\nReason: {permission_error}"
+                ) from permission_error
+
+            with open(log_path,"w",encoding="utf-8") as f:
+                f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Update attempt {attempt_id} created.\n")
+                f.write(f"Installed version: {APP_VERSION}\nExpected version: {expected_version}\n")
+                f.write(f"Executable: {current}\nExecutable folder (update destination): {target_dir}\n")
+                f.write(f"Downloaded file: {downloaded}\n")
+                f.write("Portable-folder write preflight: PASSED\n")
+            with open(helper,"w",encoding="utf-8-sig") as f:
+                f.write(script)
+            # The app may be launched from PowerShell 7. Its PSModulePath can
+            # be inherited by Windows PowerShell 5.1 and point at incompatible
+            # PowerShell 7 modules, preventing Microsoft.PowerShell.Utility
+            # (including Get-SHA256Hash) from autoloading. Let 5.1 construct its
+            # own module path instead.
+            helper_env=os.environ.copy()
+            helper_env.pop("PSModulePath",None)
+            helper_process=subprocess.Popen(
+                ["powershell.exe","-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-WindowStyle","Hidden","-File",helper],
+                env=helper_env,
+                creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0),close_fds=True
+            )
+
+            # Popen only proves that Windows created powershell.exe. It does
+            # not prove the script actually started. Do not close the app until
+            # the helper has written its own startup record; otherwise a policy
+            # block or immediate PowerShell failure can leave the user with no
+            # running app and no update.
+            helper_ready=False
+            helper_deadline=time.monotonic()+5.0
+            while time.monotonic()<helper_deadline:
+                if os.path.isfile(log_path):
+                    try:
+                        with open(log_path,"r",encoding="utf-8",errors="replace") as log_file:
+                            helper_log=log_file.read()
+                        if "Attempt started." in helper_log:
+                            helper_ready=True
+                            break
+                    except OSError:
+                        pass
+                helper_exit_code=helper_process.poll()
+                if helper_exit_code is not None:
+                    raise RuntimeError(
+                        f"The Windows update helper exited before starting (exit code {helper_exit_code}). "
+                        "The application has been kept open."
+                    )
+                time.sleep(0.1)
+
+            if not helper_ready:
+                if helper_process.poll() is None:
+                    try: helper_process.terminate()
+                    except OSError: pass
+                raise RuntimeError(
+                    "Windows started PowerShell but the update script did not confirm startup. "
+                    "The application has been kept open. Check Windows security or execution-policy restrictions."
+                )
+
+            with open(log_path,"a",encoding="utf-8") as f:
+                f.write("Updater helper startup confirmed; closing app for replacement.\\n")
+            self.update_status.setText(f"Updater started. Diagnostics: {log_path}")
             QApplication.quit()
         except Exception as exc:
-            QMessageBox.warning(self,APP_NAME,f"Could not launch the updater: {exc}")
-
+            with open(log_path,"a",encoding="utf-8") as f:
+                f.write(f"HELPER LAUNCH FAILED: {exc!r}\n")
+            QMessageBox.warning(self,APP_NAME,f"Could not launch the updater.\n\n{exc}\n\nLog: {log_path}")
+            self.update_status.setText("Update helper could not be started.")
     def open_latest_release(self):
         QDesktopServices.openUrl(QUrl(self.latest_release_url))
 
@@ -2473,9 +2741,9 @@ class StatusPopover(QFrame):
     def _add_icon_button(self,layout,label,icon_file,callback):
         button=QPushButton(); button.setObjectName("actionButton")
         button.setCursor(Qt.CursorShape.PointingHandCursor)
-        button.setFixedHeight(88); button.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
-        inner=QVBoxLayout(button); inner.setContentsMargins(3,3,3,3); inner.setSpacing(1)
-        icon=QLabel(); icon.setFixedSize(36,30); icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        button.setFixedHeight(112); button.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
+        inner=QVBoxLayout(button); inner.setContentsMargins(3,2,3,2); inner.setSpacing(0)
+        icon=QLabel(); icon.setFixedSize(24,22); icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         pix=QPixmap()
         try:
             if icon_file.endswith(".b64"):
@@ -2486,9 +2754,9 @@ class StatusPopover(QFrame):
         except Exception:
             pass
         if not pix.isNull():
-            icon.setPixmap(pix.scaled(QSize(30,30),Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation))
+            icon.setPixmap(pix.scaled(QSize(22,22),Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation))
         icon.setStyleSheet("background:transparent;")
-        text=QLabel(label.replace("\\n","\n")); text.setFixedHeight(42); text.setAlignment(Qt.AlignmentFlag.AlignCenter); text.setWordWrap(True)
+        text=QLabel(label.replace("\n","\n")); text.setFixedHeight(62); text.setAlignment(Qt.AlignmentFlag.AlignCenter); text.setWordWrap(True)
         text.setStyleSheet("color:#FFFFFF;font-size:15px;font-weight:800;background:transparent;")
         inner.addWidget(icon,0,Qt.AlignmentFlag.AlignHCenter)
         inner.addWidget(text,0)
@@ -2502,7 +2770,7 @@ class StatusPopover(QFrame):
             if not QDesktopServices.openUrl(QUrl.fromLocalFile(folder)):
                 raise OSError("Windows could not open the Captures folder.")
         except Exception as exc:
-            QMessageBox.warning(self,APP_NAME,f"Could not open the configured Captures folder.\\n\\n{exc}")
+            QMessageBox.warning(self,APP_NAME,f"Could not open the configured Captures folder.\n\n{exc}")
 
     def _detail_row(self, layout, label, value):
         row = QHBoxLayout()
@@ -3121,7 +3389,7 @@ class TrayApplication:
                                    APP_NAME)
             os.makedirs(log_dir, exist_ok=True)
             with open(os.path.join(log_dir, "input.log"), "a", encoding="utf-8") as log:
-                log.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {message}\\n")
+                log.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {message}\n")
         except Exception:
             pass
 
@@ -3217,6 +3485,26 @@ def main():
         if result != QDialog.DialogCode.Accepted:
             return 0
     tray_app = TrayApplication(app)
+    handshake_path=os.environ.pop("XCH_UPDATE_HANDSHAKE",None)
+    expected_version=os.environ.pop("XCH_EXPECTED_VERSION",None)
+    if handshake_path and expected_version:
+        try:
+            report={
+                "pid":os.getpid(),
+                "version":APP_VERSION,
+                "executable":os.path.abspath(sys.executable),
+                "expected_version":expected_version,
+                "startup_time":time.time()
+            }
+            if APP_VERSION != expected_version:
+                raise RuntimeError(f"Version mismatch: running {APP_VERSION}, expected {expected_version}")
+            with open(handshake_path,"w",encoding="utf-8") as handshake:
+                json.dump(report,handshake)
+                handshake.flush()
+                os.fsync(handshake.fileno())
+        except Exception as exc:
+            QMessageBox.critical(None,APP_NAME,f"Update startup verification failed.\n\n{exc}")
+            return 1
     return app.exec()
 
 
