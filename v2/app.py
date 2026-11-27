@@ -2781,7 +2781,7 @@ try {
         button=QPushButton(); button.setObjectName("actionButton")
         button.setCursor(Qt.CursorShape.PointingHandCursor)
         button.setFixedHeight(124); button.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
-        inner=QVBoxLayout(button); inner.setContentsMargins(3,10,3,5); inner.setSpacing(2)
+        inner=QVBoxLayout(button); inner.setContentsMargins(3,5,3,5); inner.setSpacing(2); inner.setAlignment(Qt.AlignmentFlag.AlignCenter)
         icon=QLabel(); icon.setFixedSize(33,33); icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         pix=QPixmap()
         try:
