@@ -9,7 +9,7 @@ on:
       release_tag:
         description: "Release tag (manual runs only)"
         required: true
-        default: "v2.0.23"
+        default: "v2.0.24"
         type: string
 
 permissions:
@@ -35,19 +35,18 @@ jobs:
         id: version
         shell: pwsh
         run: |
+          $app = "v2/app.py"
+          $source = Get-Content -LiteralPath $app -Raw
           if ("${{ github.event_name }}" -eq "workflow_dispatch") {
             $tag = "${{ inputs.release_tag }}"
             $version = $tag.TrimStart('v','V')
           } else {
-            # Four-part numeric versions sort correctly in the app updater.
-            # The workflow run number makes every push produce a unique tag.
-            $version = "2.0.23.${{ github.run_number }}"
+            # The app's checked-in version is the single source of truth.
+            $match = [regex]::Match($source, '(?m)^APP_VERSION = "([^"]+)"')
+            if (-not $match.Success) { throw "Could not read APP_VERSION from v2/app.py" }
+            $version = $match.Groups[1].Value
             $tag = "v$version"
           }
-          $app = "v2/app.py"
-          $source = Get-Content -LiteralPath $app -Raw
-          $source = [regex]::Replace($source, '(?m)^APP_VERSION = "[^"]+"', ('APP_VERSION = "' + $version + '"'), 1)
-          Set-Content -LiteralPath $app -Value $source -Encoding utf8
           "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "Building release $tag from ${{ github.sha }}"
