@@ -2627,7 +2627,7 @@ try {
                 f.write(f"Executable: {current}\nExecutable folder (update destination): {target_dir}\n")
                 f.write(f"Downloaded file: {downloaded}\n")
                 f.write("Portable-folder write preflight: PASSED\n")
-            with open(helper,"w",encoding="utf-8") as f:
+            with open(helper,"w",encoding="utf-8-sig") as f:
                 f.write(script)
             helper_process=subprocess.Popen(
                 ["powershell.exe","-NoProfile","-ExecutionPolicy","Bypass","-WindowStyle","Hidden","-File",helper],
