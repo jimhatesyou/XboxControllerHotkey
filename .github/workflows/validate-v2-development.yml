@@ -33,6 +33,10 @@ jobs:
         working-directory: v2
         run: python -m py_compile app.py
 
+      - name: Test portable updater on Windows
+        working-directory: v2
+        run: python tests/test_portable_updater.py
+
       - name: Install dependencies
         working-directory: v2
         run: |
