@@ -54,7 +54,7 @@ except Exception:
 
 
 APP_NAME = "XboxControllerHotkey"
-APP_VERSION = "2.0.27"
+APP_VERSION = "2.0.28"
 ACCESSORIES_AUMID = r"Microsoft.XboxDevices_8wekyb3d8bbwe!App"
 ACCESSORIES_STORE_URI = "ms-windows-store://pdp/?productid=9NBLGGH30XJ3"
 CAPTURE_SETTINGS_URI = "ms-settings:gaming-gamedvr"
@@ -1659,7 +1659,6 @@ class StatusPopover(QFrame):
         brand_font.setWeight(QFont.Weight.Bold)
         brand_font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing,-0.45)
         brand.setFont(brand_font)
-        header.addWidget(brand,alignment=Qt.AlignmentFlag.AlignVCenter)
         brand_block=QWidget()
         brand_layout=QVBoxLayout(brand_block)
         brand_layout.setContentsMargins(0,0,0,0)
@@ -3528,13 +3527,16 @@ def main():
     update_relaunch = bool(os.environ.get("XCH_UPDATE_HANDSHAKE"))
     instance_result = acquire_single_instance(retry_seconds=5 if update_relaunch else 0)
     if instance_result is False:
-        # Show feedback to the user, then exit without starting a second tray app.
-        QMessageBox.information(
-            None,
-            APP_NAME,
-            "Another instance of this program is already running.",
-            QMessageBox.StandardButton.Ok,
-        )
+        # An updater relaunch can race with another replacement process that
+        # acquired the mutex first. Exit quietly in that case; the active
+        # instance is already running and a modal warning is misleading.
+        if not update_relaunch:
+            QMessageBox.information(
+                None,
+                APP_NAME,
+                "Another instance of this program is already running.",
+                QMessageBox.StandardButton.Ok,
+            )
         return 0
     if instance_result is None:
         QMessageBox.critical(
