@@ -1817,17 +1817,17 @@ class StatusPopover(QFrame):
         powered.setObjectName("subtitle")
         powered_layout.addWidget(powered,alignment=Qt.AlignmentFlag.AlignVCenter)
         logo=QLabel()
-        logo.setFixedSize(38,38)
+        logo.setFixedSize(30,30)
         logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.powered_movie=QMovie(resource_path(os.path.join("assets","powered-by-logo.gif")))
         if self.powered_movie.isValid():
-            self.powered_movie.setScaledSize(QSize(38,38))
+            self.powered_movie.setScaledSize(QSize(30,30))
             logo.setMovie(self.powered_movie)
             self.powered_movie.start()
         else:
             logo_pix=QPixmap(resource_path(os.path.join("assets","powered-by-logo.png")))
             if not logo_pix.isNull():
-                logo.setPixmap(logo_pix.scaled(QSize(38,38),Qt.AspectRatioMode.KeepAspectRatio,
+                logo.setPixmap(logo_pix.scaled(QSize(30,30),Qt.AspectRatioMode.KeepAspectRatio,
                                                Qt.TransformationMode.SmoothTransformation))
         powered_layout.addWidget(logo,alignment=Qt.AlignmentFlag.AlignVCenter)
         powered_stack.addLayout(powered_layout)
