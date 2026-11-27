@@ -2572,36 +2572,58 @@ try {
     while ((Get-Date) -lt $startupDeadline) {
         if (Test-Path -LiteralPath $handshake -PathType Leaf) {
             $report = Get-Content -LiteralPath $handshake -Raw | ConvertFrom-Json
-            # Windows may report an 8.3 short path from Process.MainModule.FileName
-            # while Start-Process was given the long path. Resolve both to long
-            # paths before comparing; GetFullPath alone does not expand 8.3 names.
-            if (-not ('XCHUpdaterPath' -as [type])) {
-                Add-Type -TypeDefinition @'
+            # Compare file identity instead of paths. This avoids Unicode
+            # console/code-page corruption and 8.3 short-name differences.
+            $pathMatches = $false
+            try {
+                $reportedItem = Get-Item -LiteralPath ([string]$report.executable) -ErrorAction Stop
+                $targetItem = Get-Item -LiteralPath $target -ErrorAction Stop
+                $reportedIdentity = (Get-CimInstance -ClassName Win32_LogicalFile -ErrorAction SilentlyContinue)
+                # Use the native file handle's final path for both files; it is
+                # Unicode-safe and resolves short names without string encoding.
+                if (-not ('XCHUpdaterPath' -as [type])) {
+                    Add-Type -TypeDefinition @'
 using System;
 using System.Text;
+using System.IO;
+using Microsoft.Win32.SafeHandles;
 using System.Runtime.InteropServices;
 public static class XCHUpdaterPath {
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern uint GetLongPathName(string shortPath, StringBuilder longPath, uint bufferLength);
-    public static string Normalize(string path) {
-        string full = System.IO.Path.GetFullPath(path);
-        var buffer = new StringBuilder(32768);
-        uint length = GetLongPathName(full, buffer, (uint)buffer.Capacity);
-        return length > 0 && length < buffer.Capacity ? buffer.ToString() : full;
+    [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+    private static extern uint GetFinalPathNameByHandle(SafeFileHandle h, StringBuilder p, uint n, uint f);
+    public static string Resolve(string path) {
+        using (var h = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete)) {
+            var b = new StringBuilder(32768);
+            uint n = GetFinalPathNameByHandle(h, b, (uint)b.Capacity, 0);
+            if (n == 0 || n >= b.Capacity) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+            string value = b.ToString();
+            return value.StartsWith(@"\\?\\UNC\\", StringComparison.OrdinalIgnoreCase)
+                ? @"\\\\" + value.Substring(8)
+                : value.StartsWith(@"\\?\\", StringComparison.OrdinalIgnoreCase) ? value.Substring(4) : value;
+        }
     }
 }
 '@
+                }
+                $reportedPath = [XCHUpdaterPath]::Resolve([string]$report.executable)
+                $targetPath = [XCHUpdaterPath]::Resolve([string]$target)
+                $pathMatches = [string]::Equals($reportedPath, $targetPath, [StringComparison]::OrdinalIgnoreCase)
+            } catch {
+                Write-UpdateLog ('Path identity comparison failed: ' + $_.Exception.ToString())
             }
-            $reportedPath = [XCHUpdaterPath]::Normalize([string]$report.executable)
-            $targetPath = [XCHUpdaterPath]::Normalize([string]$target)
             $pidMatches = [int]$report.pid -eq $newProcess.Id
             $versionMatches = [string]$report.version -eq [string]$expectedVersion
-            $pathMatches = [string]::Equals($reportedPath, $targetPath, [StringComparison]::OrdinalIgnoreCase)
             if ($versionMatches -and $pidMatches -and $pathMatches) {
                 $verified = $true
                 break
             }
             throw ('Startup handshake mismatch. Expected PID=' + $newProcess.Id +
+                '; reported PID=' + $report.pid +
+                '; version match=' + $versionMatches +
+                '; path match=' + $pathMatches +
+                '; expected path=' + $target +
+                '; reported path=' + $report.executable +
+                '; report=' + ($report | ConvertTo-Json -Compress))
                 '; reported PID=' + $report.pid +
                 '; version match=' + $versionMatches +
                 '; path match=' + $pathMatches +
