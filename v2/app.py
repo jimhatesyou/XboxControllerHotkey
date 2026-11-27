@@ -2572,12 +2572,42 @@ try {
     while ((Get-Date) -lt $startupDeadline) {
         if (Test-Path -LiteralPath $handshake -PathType Leaf) {
             $report = Get-Content -LiteralPath $handshake -Raw | ConvertFrom-Json
-            if ($report.version -eq $expectedVersion -and [int]$report.pid -eq $newProcess.Id -and
-                [IO.Path]::GetFullPath($report.executable) -eq [IO.Path]::GetFullPath($target)) {
+            # Windows may report an 8.3 short path from Process.MainModule.FileName
+            # while Start-Process was given the long path. Resolve both to long
+            # paths before comparing; GetFullPath alone does not expand 8.3 names.
+            if (-not ('XCHUpdaterPath' -as [type])) {
+                Add-Type -TypeDefinition @'
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+public static class XCHUpdaterPath {
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern uint GetLongPathName(string shortPath, StringBuilder longPath, uint bufferLength);
+    public static string Normalize(string path) {
+        string full = System.IO.Path.GetFullPath(path);
+        var buffer = new StringBuilder(32768);
+        uint length = GetLongPathName(full, buffer, (uint)buffer.Capacity);
+        return length > 0 && length < buffer.Capacity ? buffer.ToString() : full;
+    }
+}
+'@
+            }
+            $reportedPath = [XCHUpdaterPath]::Normalize([string]$report.executable)
+            $targetPath = [XCHUpdaterPath]::Normalize([string]$target)
+            $pidMatches = [int]$report.pid -eq $newProcess.Id
+            $versionMatches = [string]$report.version -eq [string]$expectedVersion
+            $pathMatches = [string]::Equals($reportedPath, $targetPath, [StringComparison]::OrdinalIgnoreCase)
+            if ($versionMatches -and $pidMatches -and $pathMatches) {
                 $verified = $true
                 break
             }
-            throw ('Startup handshake did not match expected process/version/path. Report=' + ($report | ConvertTo-Json -Compress))
+            throw ('Startup handshake mismatch. Expected PID=' + $newProcess.Id +
+                '; reported PID=' + $report.pid +
+                '; version match=' + $versionMatches +
+                '; path match=' + $pathMatches +
+                '; expected path=' + $targetPath +
+                '; reported path=' + $reportedPath +
+                '; report=' + ($report | ConvertTo-Json -Compress))
         }
         $newProcess.Refresh()
         if ($newProcess.HasExited) { throw ('Updated application exited during startup with code ' + $newProcess.ExitCode) }
