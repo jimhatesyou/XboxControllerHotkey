@@ -1814,10 +1814,10 @@ class StatusPopover(QFrame):
                                                Qt.TransformationMode.SmoothTransformation))
         powered_layout.addWidget(logo,alignment=Qt.AlignmentFlag.AlignVCenter)
         footer.addWidget(powered_group,alignment=Qt.AlignmentFlag.AlignVCenter)
-        root.addLayout(footer)
         self.activity_graph=ActivityGraph(self.home_page)
         self.activity_graph.activity_source=lambda: getattr(self,"activity_source",lambda:0.0)()
         root.addWidget(self.activity_graph)
+        root.addLayout(footer)
         self.pages.addWidget(self.home_page)
 
         # ---------------- ABOUT ----------------
