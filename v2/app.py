@@ -2490,8 +2490,17 @@ try {
     $targetDir = Split-Path -Parent $target
     if (-not (Test-Path -LiteralPath $targetDir -PathType Container)) { throw 'Application folder does not exist.' }
     Copy-Item -LiteralPath $source -Destination $tmp
-    $sourceHash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
-    $stageHash = (Get-FileHash -LiteralPath $tmp -Algorithm SHA256).Hash
+    # Use .NET for hashing instead of Get-FileHash so the updater does
+    # not depend on PowerShell module autoloading or PSModulePath.
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $sourceStream = [System.IO.File]::OpenRead($source)
+        try { $sourceHash = ([System.BitConverter]::ToString($sha256.ComputeHash($sourceStream))).Replace('-','') }
+        finally { $sourceStream.Dispose() }
+        $stageStream = [System.IO.File]::OpenRead($tmp)
+        try { $stageHash = ([System.BitConverter]::ToString($sha256.ComputeHash($stageStream))).Replace('-','') }
+        finally { $stageStream.Dispose() }
+    } finally { $sha256.Dispose() }
     if ($sourceHash -ne $stageHash) { throw 'Staged executable SHA-256 does not match the verified download.' }
     Write-UpdateLog ('Staged executable verified. SHA256=' + $stageHash)
 
@@ -2534,7 +2543,12 @@ try {
     }
     if (-not $installed) { throw 'Could not replace the installed executable. Atomic replacement and same-directory rename fallback both failed. See the updater log for details.' }
 
-    $installedHash = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $installedStream = [System.IO.File]::OpenRead($target)
+        try { $installedHash = ([System.BitConverter]::ToString($sha256.ComputeHash($installedStream))).Replace('-','') }
+        finally { $installedStream.Dispose() }
+    } finally { $sha256.Dispose() }
     if ($installedHash -ne $sourceHash) { throw 'Installed executable SHA-256 does not match the verified download.' }
     if (Test-Path -LiteralPath $handshake) { Remove-Item -LiteralPath $handshake -Force }
     $env:XCH_UPDATE_HANDSHAKE = $handshake
