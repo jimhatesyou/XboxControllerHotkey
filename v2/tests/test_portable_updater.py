@@ -109,7 +109,7 @@ def build_helper(
     }
     for token, replacement in replacements.items():
         script = script.replace(token, replacement)
-    helper_path.write_text(script, encoding="utf-8")
+    helper_path.write_text(script, encoding="utf-8-sig")
 
 
 def run_update_case(
