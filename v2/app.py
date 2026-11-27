@@ -29,7 +29,7 @@ from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPen, QBrush, QPixmap,
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 from PySide6.QtWidgets import (
     QApplication, QDialog, QFrame, QStyle, QHBoxLayout, QLabel, QMenu, QPushButton, QGraphicsOpacityEffect,
-    QSizePolicy, QSystemTrayIcon, QVBoxLayout, QWidget, QTabWidget, QStackedWidget, QMessageBox, QScrollArea, QListWidget, QCheckBox
+    QSizePolicy, QSystemTrayIcon, QVBoxLayout, QWidget, QTabWidget, QStackedWidget, QMessageBox, QScrollArea, QListWidget, QCheckBox, QProgressBar
 )
 
 # The app lives in the tray while games own foreground focus. SDL disables
@@ -1326,6 +1326,7 @@ class UpdatePromptDialog(QDialog):
 
 class UpdateDownloadWorker(QThread):
     result=Signal(bool,str)
+    progress=Signal(int,int)
     def __init__(self, exe_url, sha_url, log_path=None, parent=None):
         super().__init__(parent)
         self.exe_url=exe_url
@@ -1361,6 +1362,11 @@ class UpdateDownloadWorker(QThread):
             digest=hashlib.sha256()
             total_bytes=0
             with urllib.request.urlopen(self.exe_url, timeout=90) as response, open(path,"wb") as out:
+                try:
+                    content_length=int(response.headers.get("Content-Length") or 0)
+                except (TypeError,ValueError):
+                    content_length=0
+                self.progress.emit(0,content_length)
                 while True:
                     chunk=response.read(1024*1024)
                     if not chunk:
@@ -1368,6 +1374,7 @@ class UpdateDownloadWorker(QThread):
                     out.write(chunk)
                     digest.update(chunk)
                     total_bytes+=len(chunk)
+                    self.progress.emit(total_bytes,content_length)
             actual=digest.hexdigest().lower()
             self.write_log(f"Download complete. Bytes={total_bytes}; expected SHA256={expected}; actual SHA256={actual}")
             if actual!=expected:
@@ -1864,6 +1871,15 @@ class StatusPopover(QFrame):
         self.update_status.setStyleSheet("color:#A7AFBB;font-size:11px;")
         self.update_status.setWordWrap(True)
         about_lay.addWidget(self.update_status)
+
+        self.update_progress=QProgressBar()
+        self.update_progress.setRange(0,100)
+        self.update_progress.setValue(0)
+        self.update_progress.setTextVisible(False)
+        self.update_progress.setFixedHeight(7)
+        self.update_progress.setStyleSheet("QProgressBar{background:rgba(255,255,255,22);border:0;border-radius:3px;} QProgressBar::chunk{background:#00D451;border-radius:3px;}")
+        self.update_progress.setVisible(False)
+        about_lay.addWidget(self.update_progress)
 
         self.check_button=QPushButton("Check for updates")
         self.check_button.clicked.connect(self.check_updates)
@@ -2420,21 +2436,40 @@ class StatusPopover(QFrame):
             log.write(f"Installed version: {APP_VERSION}\nTarget version: {self.latest_release_tag}\n")
             log.write(f"Executable: {os.path.abspath(sys.executable)}\n")
             log.write(f"EXE URL: {self.latest_exe_url}\nChecksum URL: {self.latest_sha_url}\n")
-        self.update_status.setText("Downloading and verifying update…")
+        self.update_status.setText("Downloading update…")
+        self.update_progress.setRange(0,100)
+        self.update_progress.setValue(0)
+        self.update_progress.setVisible(True)
         self.check_button.setEnabled(False)
+        if hasattr(self,"install_update_button"): self.install_update_button.setEnabled(False)
         self.update_download_worker=UpdateDownloadWorker(
             self.latest_exe_url,self.latest_sha_url,self.update_log_path,self
         )
+        self.update_download_worker.progress.connect(self.on_update_download_progress)
         self.update_download_worker.result.connect(self.finish_auto_update)
         self.update_download_worker.start()
 
+    def on_update_download_progress(self,received,total):
+        if total > 0:
+            self.update_progress.setRange(0,total)
+            self.update_progress.setValue(min(received,total))
+            self.update_status.setText(f"Downloading update… {int((received/total)*100)}%")
+        else:
+            self.update_progress.setRange(0,0)
+            self.update_status.setText("Downloading update…")
+
     def finish_auto_update(self,success,value):
         self.check_button.setEnabled(True)
+        if hasattr(self,"install_update_button"): self.install_update_button.setEnabled(True)
         if not success:
+            self.update_progress.setVisible(False)
             QMessageBox.warning(self,APP_NAME,f"The update could not be downloaded or verified.\n\n{value}")
             self.update_status.setText("Update failed during download or checksum verification.")
             return
 
+        self.update_progress.setRange(0,100)
+        self.update_progress.setValue(100)
+        self.update_status.setText("Download complete. Verifying update…")
         current=os.path.abspath(sys.executable)
         downloaded=os.path.abspath(value)
         attempt_id=getattr(self,"update_attempt_id",f"{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}")
@@ -2710,13 +2745,17 @@ try {
 
             with open(log_path,"a",encoding="utf-8") as f:
                 f.write("Updater helper startup confirmed; closing app for replacement.\\n")
-            self.update_status.setText(f"Updater started. Diagnostics: {log_path}")
-            QApplication.quit()
+            self.update_status.setText(f"Update ready. Closing in 3 seconds to launch v{expected_version}…")
+            self.update_progress.setVisible(False)
+            if hasattr(self,"install_update_button"): self.install_update_button.setEnabled(False)
+            QTimer.singleShot(3000,QApplication.quit)
         except Exception as exc:
             with open(log_path,"a",encoding="utf-8") as f:
                 f.write(f"HELPER LAUNCH FAILED: {exc!r}\n")
             QMessageBox.warning(self,APP_NAME,f"Could not launch the updater.\n\n{exc}\n\nLog: {log_path}")
             self.update_status.setText("Update helper could not be started.")
+            self.update_progress.setVisible(False)
+            if hasattr(self,"install_update_button"): self.install_update_button.setEnabled(True)
     def open_latest_release(self):
         QDesktopServices.openUrl(QUrl(self.latest_release_url))
 
