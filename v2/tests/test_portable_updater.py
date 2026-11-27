@@ -64,7 +64,11 @@ def run_powershell(script_path: Path, *args: str, timeout: int = 30) -> subproce
         str(script_path),
         *args,
     ]
-    return subprocess.run(command, capture_output=True, text=True, timeout=timeout)
+    env = os.environ.copy()
+    # CI invokes this test from PowerShell 7. Windows PowerShell 5.1 child
+    # processes must not inherit PowerShell 7 module directories.
+    env.pop("PSModulePath", None)
+    return subprocess.run(command, capture_output=True, text=True, timeout=timeout, env=env)
 
 
 def compile_test_executable(out_path: Path, build_version: str, compile_script: Path) -> None:
@@ -157,6 +161,8 @@ def run_update_case(
         expected_version,
         force_rename_fallback,
     )
+    helper_env = os.environ.copy()
+    helper_env.pop("PSModulePath", None)
     helper_process = subprocess.Popen(
         [
             powershell_executable(),
@@ -167,6 +173,7 @@ def run_update_case(
             "-File",
             str(helper_path),
         ],
+        env=helper_env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
