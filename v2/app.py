@@ -2817,7 +2817,7 @@ try {
         if not pix.isNull():
             icon.setPixmap(pix.scaled(QSize(33,33),Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation))
         icon.setStyleSheet("background:transparent;")
-        text=QLabel(label.replace("\n","\n")); text.setFixedHeight(62); text.setAlignment(Qt.AlignmentFlag.AlignCenter); text.setWordWrap(True)
+        text=QLabel(label.replace("\n","\n")); text.setFixedHeight(42); text.setAlignment(Qt.AlignmentFlag.AlignCenter); text.setWordWrap(True)
         text.setStyleSheet("color:#FFFFFF;font-size:15px;font-weight:800;background:transparent;")
         inner.addWidget(icon,0,Qt.AlignmentFlag.AlignHCenter)
         inner.addWidget(text,0)
@@ -3475,8 +3475,12 @@ _SINGLE_INSTANCE_MUTEX_HANDLE = None
 _SINGLE_INSTANCE_MUTEX_NAME = r"Local\XboxControllerHotkey_V2_SingleInstance"
 
 
-def acquire_single_instance():
-    """Return True only for the first running instance of this application."""
+def acquire_single_instance(retry_seconds=0):
+    """Return True only for the first running instance of this application.
+
+    During an updater relaunch, briefly retry a pre-existing mutex. This avoids
+    reporting a duplicate instance during the old process' shutdown transition.
+    """
     global _SINGLE_INSTANCE_MUTEX_HANDLE
     if os.name != "nt":
         return True
@@ -3485,21 +3489,26 @@ def acquire_single_instance():
     create_mutex = kernel32.CreateMutexW
     create_mutex.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
     create_mutex.restype = wintypes.HANDLE
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
 
-    handle = create_mutex(None, False, _SINGLE_INSTANCE_MUTEX_NAME)
-    if not handle:
-        # Distinguish a mutex API failure from an existing application instance.
-        return None
+    deadline = time.monotonic() + max(0, retry_seconds)
+    while True:
+        ctypes.set_last_error(0)
+        handle = create_mutex(None, False, _SINGLE_INSTANCE_MUTEX_NAME)
+        if not handle:
+            return None
 
-    ERROR_ALREADY_EXISTS = 183
-    if ctypes.get_last_error() == ERROR_ALREADY_EXISTS:
-        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
-        kernel32.CloseHandle.restype = wintypes.BOOL
-        kernel32.CloseHandle(handle)
-        return False
+        ERROR_ALREADY_EXISTS = 183
+        if ctypes.get_last_error() == ERROR_ALREADY_EXISTS:
+            kernel32.CloseHandle(handle)
+            if time.monotonic() < deadline:
+                time.sleep(0.2)
+                continue
+            return False
 
-    _SINGLE_INSTANCE_MUTEX_HANDLE = handle
-    return True
+        _SINGLE_INSTANCE_MUTEX_HANDLE = handle
+        return True
 
 
 def main():
@@ -3508,7 +3517,10 @@ def main():
         return 1
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
-    instance_result = acquire_single_instance()
+    # Only updater-launched replacements get a short retry window. Normal
+    # launches retain immediate duplicate-instance detection.
+    update_relaunch = bool(os.environ.get("XCH_UPDATE_HANDSHAKE"))
+    instance_result = acquire_single_instance(retry_seconds=5 if update_relaunch else 0)
     if instance_result is False:
         # Show feedback to the user, then exit without starting a second tray app.
         QMessageBox.information(
