@@ -54,7 +54,7 @@ except Exception:
 
 
 APP_NAME = "XboxControllerHotkey"
-APP_VERSION = "2.0.30"
+APP_VERSION = "2.0.31"
 ACCESSORIES_AUMID = r"Microsoft.XboxDevices_8wekyb3d8bbwe!App"
 ACCESSORIES_STORE_URI = "ms-windows-store://pdp/?productid=9NBLGGH30XJ3"
 CAPTURE_SETTINGS_URI = "ms-settings:gaming-gamedvr"
@@ -2637,17 +2637,32 @@ try {
     while ((Get-Date) -lt $startupDeadline) {
         if (Test-Path -LiteralPath $handshake -PathType Leaf) {
             $report = Get-Content -LiteralPath $handshake -Raw | ConvertFrom-Json
-            # The installed image SHA-256 is verified immediately before
-            # launch. Confirm the replacement process and version here without
-            # comparing path strings, which are unsafe for Unicode/8.3 paths.
-            $pidMatches = [int]$report.pid -eq $newProcess.Id
+            # PyInstaller one-file builds use a bootloader parent process
+            # and a separate application child process. Start-Process returns
+            # the bootloader PID, while the app handshake reports the child PID.
+            # Verify the child belongs to this bootloader and runs this exact EXE.
+            $reportedPid = [int]$report.pid
+            $reportedProcess = Get-CimInstance Win32_Process -Filter ("ProcessId = " + $reportedPid) -ErrorAction SilentlyContinue
+            $pidMatches = $null -ne $reportedProcess -and [int]$reportedProcess.ParentProcessId -eq [int]$newProcess.Id
+            $pathMatches = $false
+            if ($pidMatches -and $reportedProcess.ExecutablePath) {
+                $pathMatches = [string]::Equals(
+                    [System.IO.Path]::GetFullPath([string]$reportedProcess.ExecutablePath),
+                    [System.IO.Path]::GetFullPath($target),
+                    [System.StringComparison]::OrdinalIgnoreCase
+                )
+            }
             $versionMatches = [string]$report.version -eq [string]$expectedVersion
-            if ($versionMatches -and $pidMatches) {
+            if ($versionMatches -and $pidMatches -and $pathMatches) {
                 $verified = $true
+                Write-UpdateLog ('Startup verified. PyInstaller bootloader PID=' + $newProcess.Id +
+                    '; application PID=' + $reportedPid + '; executable path verified.')
                 break
             }
-            throw ('Startup handshake mismatch. Expected PID=' + $newProcess.Id +
-                '; reported PID=' + $report.pid +
+            throw ('Startup handshake mismatch. Bootloader PID=' + $newProcess.Id +
+                '; reported application PID=' + $reportedPid +
+                '; parent PID match=' + $pidMatches +
+                '; executable path match=' + $pathMatches +
                 '; version match=' + $versionMatches +
                 '; expected version=' + $expectedVersion +
                 '; reported version=' + $report.version +
