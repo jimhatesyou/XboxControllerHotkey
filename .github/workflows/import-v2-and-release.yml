@@ -80,5 +80,6 @@ jobs:
           files: |
             v2/dist/XboxControllerHotkey.exe
             v2/dist/XboxControllerHotkey.exe.sha256
-          generate_release_notes: true
+          body_path: v2/RELEASE_NOTES.md
+          generate_release_notes: false
           fail_on_unmatched_files: true
