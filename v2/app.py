@@ -631,6 +631,7 @@ class ControllerMonitor:
                 devices.append(joystick)
 
             self.joysticks = devices
+            previous_devices = self.available_devices
             self.available_devices = []
             for joystick in devices:
                 name = joystick.get_name() or "Game Controller"
@@ -640,7 +641,7 @@ class ControllerMonitor:
                 # Scans run every 2.5 seconds; resetting this field was
                 # overwriting successful battery reads.
                 previous = next(
-                    (item for item in self.available_devices
+                    (item for item in previous_devices
                      if (guid and item.guid == guid) or
                         (not guid and item.instance_id == instance_id)),
                     None,
