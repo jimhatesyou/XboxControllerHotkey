@@ -2,6 +2,29 @@
 
 All notable changes to XboxControllerHotkey are documented here.
 
+## [2.0.32] - Consolidated release notes
+
+This entry consolidates the changes originally published across v2.0.24 through v2.0.31.
+
+### Interface and layout
+- Refined home-screen button spacing and sizing.
+- Added updater download progress feedback and a three-second relaunch countdown before the application closes to start the replacement.
+- Increased the JimHub footer logo to 2.5 times its previous size while keeping the “Powered by” label vertically aligned.
+- Corrected the application title/version layout so the version appears beneath the XboxControllerHotkey heading.
+- Balanced the green action-button icon and label placement without changing button or popover dimensions.
+- Standardized About-page button typography to match the FAQs button.
+
+### Updater reliability
+- Added an updater-only retry for the single-instance mutex and retained duplicate-instance protection for normal launches.
+- Added an explicit updater-relaunch command-line marker and detect it before Qt initialization.
+- Corrected startup verification for PyInstaller one-file builds: the updater verifies the application child process, its parent bootloader process, the installed executable path, and the expected application version rather than incorrectly requiring the parent and child PIDs to match.
+- Retained rollback behavior for genuine update-startup verification failures.
+
+### Verification
+- Confirmed the v2.0.32 to v2.0.33 in-app update completed, relaunched successfully, and did not display the false duplicate-instance warning.
+
+## [2.0.14] - 2026-11-25
+
 ## [2.0.14] - 2026-11-25
 
 ### Improvements
