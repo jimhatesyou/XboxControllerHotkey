@@ -1,6 +1,10 @@
 name: Validate XboxControllerHotkey V2 source
 
 on:
+  pull_request:
+    paths:
+      - "v2/**"
+      - ".github/workflows/validate-v2.yml"
   push:
     branches: [main]
     paths:
