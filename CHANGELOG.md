@@ -7,7 +7,6 @@ All notable changes to XboxControllerHotkey are documented here.
 ### TL;DR
 - Refined home-screen spacing, button sizing/alignment, title/version placement, and About-page typography.
 - Updated the About button with the supplied white information icon.
-- Enlarged the JimHub footer logo while keeping the “Powered by” label aligned.
 - Added updater download progress and a three-second relaunch countdown.
 - Improved executable replacement, rollback, and updater relaunch handling.
 - Fixed PyInstaller startup verification by correctly validating the application child process, its bootloader parent, executable path, and version.
