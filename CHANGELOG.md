@@ -2,6 +2,12 @@
 
 All notable changes to XboxControllerHotkey are documented here.
 
+## [2.0.35] - 2026-11-28
+
+### Fixed
+- Preserve the last known controller battery reading across routine background scans instead of resetting it to “Battery pending.”
+- Refresh battery status every 60 seconds and shortly after controller connection.
+
 ## [2.0.34] - 2026-11-28
 
 ### TL;DR
