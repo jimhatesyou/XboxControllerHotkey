@@ -54,7 +54,7 @@ except Exception:
 
 
 APP_NAME = "XboxControllerHotkey"
-APP_VERSION = "2.0.34"
+APP_VERSION = "2.0.35"
 ACCESSORIES_AUMID = r"Microsoft.XboxDevices_8wekyb3d8bbwe!App"
 ACCESSORIES_STORE_URI = "ms-windows-store://pdp/?productid=9NBLGGH30XJ3"
 CAPTURE_SETTINGS_URI = "ms-settings:gaming-gamedvr"
@@ -636,17 +636,23 @@ class ControllerMonitor:
                 name = joystick.get_name() or "Game Controller"
                 instance_id = joystick.get_instance_id()
                 guid = joystick.get_guid() if hasattr(joystick, "get_guid") else ""
+                # Preserve the last known reading across routine scans.
+                # Scans run every 2.5 seconds; resetting this field was
+                # overwriting successful battery reads.
+                previous = next(
+                    (item for item in self.available_devices
+                     if (guid and item.guid == guid) or
+                        (not guid and item.instance_id == instance_id)),
+                    None,
+                )
                 self.available_devices.append(ControllerInfo(
                     name=name,
                     instance_id=instance_id,
                     guid=guid,
-                    # Connection transport is intentionally not displayed in
-                    # the current UI. Do not run the Windows PnP/PowerShell
-                    # resolver during controller refresh: it can block the Qt
-                    # UI thread for several seconds. Keep the field at its
-                    # neutral default until transport detection is moved to a
-                    # dedicated background worker.
-                    battery="Battery pending",
+                    battery=(
+                        previous.battery if previous and previous.battery
+                        else "Battery pending"
+                    ),
                 ))
 
             now = time.monotonic()
@@ -695,13 +701,17 @@ class ControllerMonitor:
     def refresh_battery(self) -> str:
         if self.active is None:
             return "Unavailable"
-        battery = get_controller_battery(self.active.guid)
-        self.active.battery = battery
-        for item in self.available_devices:
-            if item.instance_id == self.active.instance_id:
-                item.battery = battery
-                break
-        return battery
+        # Serialize battery reads with controller enumeration.
+        with self._state_lock:
+            if self.active is None:
+                return "Unavailable"
+            battery = get_controller_battery(self.active.guid)
+            self.active.battery = battery
+            for item in self.available_devices:
+                if item.instance_id == self.active.instance_id:
+                    item.battery = battery
+                    break
+            return battery
 
     def select_device(self, instance_id: int):
         self.selected_instance_id = instance_id
@@ -3223,7 +3233,8 @@ class TrayApplication:
         self.has_checked_connection = False
         self.last_logged_controls = set()
         self.battery_timer = QTimer()
-        self.battery_timer.setInterval(5 * 60 * 1000)
+        # Keep the displayed battery report reasonably current.
+        self.battery_timer.setInterval(60 * 1000)
         self.battery_timer.timeout.connect(self.refresh_battery)
         self._build_tray_menu()
         self.tray.activated.connect(self.on_tray_activated)
