@@ -1,0 +1,40 @@
+name: Keep only the current public release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: contains(github.event.head_commit.message, 'Finalize v2.0.34 release cleanup')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out release notes
+        uses: actions/checkout@v4
+
+      - name: Update current release notes and remove superseded releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          current_tag="v2.0.34"
+          gh release view "$current_tag" >/dev/null
+          gh release edit "$current_tag" --notes-file v2/RELEASE_NOTES.md
+
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            if [ "$tag" = "$current_tag" ]; then
+              echo "Keeping $tag"
+              continue
+            fi
+            echo "Deleting superseded release and tag: $tag"
+            gh release delete "$tag" --cleanup-tag --yes
+          done < <(gh release list --limit 100 --json tagName --jq '.[].tagName')
+
+          echo "Only $current_tag remains published."
